@@ -1,0 +1,109 @@
+
+-- 04: Grant service roles the required privileges.
+-- Execute using SECURITYADMIN.
+
+USE ROLE SECURITYADMIN;
+
+-- ==========================================
+-- 1. WAREHOUSE ACCESS
+-- ==========================================
+-- Allow each service to use Snowflake compute.
+
+GRANT USAGE ON WAREHOUSE STEAM_WH
+    TO ROLE STEAM_LOADER;
+
+GRANT USAGE ON WAREHOUSE STEAM_WH
+    TO ROLE STEAM_TRANSFORMER;
+
+GRANT USAGE ON WAREHOUSE STEAM_WH
+    TO ROLE STEAM_REPORTER;
+
+
+-- ==========================================
+-- 2. DATABASE ACCESS
+-- ==========================================
+-- Allow each service to access STEAM_DB.
+
+GRANT USAGE ON DATABASE STEAM_DB
+    TO ROLE STEAM_LOADER;
+
+GRANT USAGE ON DATABASE STEAM_DB
+    TO ROLE STEAM_TRANSFORMER;
+
+GRANT USAGE ON DATABASE STEAM_DB
+    TO ROLE STEAM_REPORTER;
+
+
+-- ==========================================
+-- 3. RAW DATA ACCESS FOR DBT
+-- ==========================================
+-- dlt owns STEAM_RAW.
+-- dbt needs read-only access to raw data.
+
+GRANT USAGE ON SCHEMA STEAM_DB.STEAM_RAW
+    TO ROLE STEAM_TRANSFORMER;
+
+-- Existing raw tables
+GRANT SELECT ON ALL TABLES IN SCHEMA STEAM_DB.STEAM_RAW
+    TO ROLE STEAM_TRANSFORMER;
+
+-- Future raw tables
+GRANT SELECT ON FUTURE TABLES IN SCHEMA STEAM_DB.STEAM_RAW
+    TO ROLE STEAM_TRANSFORMER;
+
+-- Existing raw views
+GRANT SELECT ON ALL VIEWS IN SCHEMA STEAM_DB.STEAM_RAW
+    TO ROLE STEAM_TRANSFORMER;
+
+-- Future raw views
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA STEAM_DB.STEAM_RAW
+    TO ROLE STEAM_TRANSFORMER;
+
+
+-- ==========================================
+-- 4. MARTS ACCESS FOR STREAMLIT
+-- ==========================================
+-- dbt owns MARTS.
+-- Streamlit only needs read access.
+
+GRANT USAGE ON SCHEMA STEAM_DB.MARTS
+    TO ROLE STEAM_REPORTER;
+
+-- Existing mart tables
+GRANT SELECT ON ALL TABLES IN SCHEMA STEAM_DB.MARTS
+    TO ROLE STEAM_REPORTER;
+
+-- Future mart tables
+GRANT SELECT ON FUTURE TABLES IN SCHEMA STEAM_DB.MARTS
+    TO ROLE STEAM_REPORTER;
+
+-- Existing mart views
+GRANT SELECT ON ALL VIEWS IN SCHEMA STEAM_DB.MARTS
+    TO ROLE STEAM_REPORTER;
+
+-- Future mart views
+GRANT SELECT ON FUTURE VIEWS IN SCHEMA STEAM_DB.MARTS
+    TO ROLE STEAM_REPORTER;
+
+
+
+-- CONFIRM GRANTS
+USE ROLE SECURITYADMIN;
+
+SELECT CURRENT_ROLE();
+
+
+SHOW GRANTS TO ROLE STEAM_LOADER;
+
+SHOW GRANTS TO ROLE STEAM_TRANSFORMER;
+
+SHOW GRANTS TO ROLE STEAM_REPORTER;
+
+
+-- CONFIRM FUTURE GRANTS
+
+-- Future raw data access for dbt
+SHOW FUTURE GRANTS IN SCHEMA STEAM_DB.STEAM_RAW;
+
+-- Future curated data access for Streamlit
+SHOW FUTURE GRANTS IN SCHEMA STEAM_DB.MARTS;

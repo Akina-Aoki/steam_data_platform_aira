@@ -231,3 +231,6 @@ logs/
 
 # Docker local overrides
 docker-compose.override.yml
+
+# dbt local user identifier
+.user.yml

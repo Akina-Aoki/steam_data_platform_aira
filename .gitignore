@@ -234,3 +234,7 @@ docker-compose.override.yml
 
 # dbt local user identifier
 .user.yml
+
+
+# dlt local secrets
+.dlt/secrets.toml

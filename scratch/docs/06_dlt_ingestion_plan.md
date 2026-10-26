@@ -1,20 +1,19 @@
-# 06 — Steam Data Ingestion Plan (Python + dlt)
+# 06  Steam Data Ingestion Plan (dlt)
 
 ## Overview
 
-This document plans how we take data from Steam and land it in Snowflake `STEAM_DB.STEAM_RAW` using Python and dlt.
+This document plans how we take data from Steam and land it in Snowflake `STEAM_DB.STEAM_RAW` using dlt.
 
 **Scope of this phase:** API extraction and loading only. No dbt models, dimensional modeling, Airflow, Docker, or dashboards yet.
 
-**Status on 2026-10-23:**
+**Status on 2026-10-26:**
 
 - Snowflake warehouse, database, schemas, roles, and users are set up and tested.
-- dbt Core is initialized, but no models exist.
-- Code for the `appdetails` endpoint exists in `src/steam_data_platform/` (`settings.py`, `connections.py`, `ingestion/steam.py`, `ingestion/pipelines_steam.py`).
-- First full load done: 81 Paradox Interactive games in `STEAM_DB.STEAM_RAW.GAMES` (load id `1792757384.0749068`). An earlier test row for Portal 2 (appid 620) is also in the table.
-- Validation and first EDA of that table: `notebooks/01_eda_games.ipynb`.
-- Reviews and player counts: not started.
-- Everything is uncommitted on branch `feat/steam-dlt-ingestion`.
+- dbt Core is set up, but there are no models yet.
+- **Games** (Store `appdetails`) are done and merged into `main`. `STEAM_DB.STEAM_RAW.GAMES` has two snapshots of the 81 Paradox Interactive games (2026-10-23 and 2026-10-26), plus one old Portal 2 test row. Notebook: `notebooks/01_eda_games.ipynb`.
+- **Review totals** (`review_summary`) are done: built, tested and loaded on 2026-10-26. `STEAM_DB.STEAM_RAW.REVIEW_SUMMARY` has 81 rows (load id `1793014149.3994608`). Notebook: `notebooks/02_eda_reviews.ipynb`. Tests: `tests/test_steam_dlt.py`.
+- **Player counts:** not started.
+- The reviews work is on branch `feat/steam-reviews-ingestion` and is **not committed yet**.
 - This replaces the earlier Aviation Nomad data source (Aviationstack) with Steam.
 
 ---
@@ -26,7 +25,7 @@ We use three public endpoints. None of them needs a Steam Web API key (my accoun
 | # | Endpoint | What it gives us | Status |
 |---|---|---|---|
 | 1 | Store `appdetails` | Title, genres, price, developer, publisher, release date | Verified and loaded (2026-10-23) |
-| 2 | Store `appreviews` (or `IUserReviewsService/GetAppReviews`) | Player reviews, thumbs up/down, timestamps, playtime | To verify |
+| 2 | `IUserReviewsService/GetAppReviews` (the Store `appreviews` URL does not work for us) | Total thumbs up and thumbs down per game, plus a score and label. It can also return single reviews, but we do not load them | Verified and loaded (2026-10-26) |
 | 3 | `ISteamUserStats/GetNumberOfCurrentPlayers` | Number of players in the game right now | To verify |
 
 URLs to test (Portal 2, `appid=620`):
@@ -37,7 +36,7 @@ https://store.steampowered.com/appreviews/620?json=1&num_per_page=5&cursor=*
 https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=620
 ```
 
-**Note on reviews:** the earlier plan used `IUserReviewsService/GetAppReviews`. Most public examples use `store.steampowered.com/appreviews/{appid}` instead. We test both and keep whichever works without a key.
+**Note on reviews (tested 2026-10-26):** the Store URL `store.steampowered.com/appreviews/{appid}` did not work for us. In all three versions we tried, Steam sent us to the Store home page instead of giving data. We do not know why, so we dropped it. The URL `api.steampowered.com/IUserReviewsService/GetAppReviews/v1/` works without a key, so we use that one.
 
 The common identifier across all three is `appid`.
 
@@ -96,9 +95,23 @@ Fields to inspect:
 
 **Done when:** we can describe the response structure in our own words and have chosen which fields to keep. (Done.)
 
-### Step 2 — `appreviews`
+### Step 2 — reviews (done, 2026-10-26)
 
-Questions: pagination with `cursor`, page size limit (max 100), review identifier (`recommendationid`), how to avoid reloading the same reviews, which `filter`, `language`, and `purchase_type` to use, which fields are worth keeping (e.g. `voted_up`, playtime, timestamps).
+**Goal:** see what the reviews endpoint really returns, then decide what to store.
+
+Checklist:
+
+- [x] Which URL works without a key? Only `IUserReviewsService/GetAppReviews/v1/` (the input goes in as JSON in `input_json`). The Store `appreviews` URL sends us to the Store home page.
+- [x] What is in the answer? `query_summary` (the totals), `reviews` (a list), `cursor` (a bookmark for the next page), `day_range_used` and `total_matching`.
+- [x] What is in the totals? `review_score` (0 to 9), `review_score_desc` (a label like "Very Positive"), `total_positive`, `total_negative` and `total_reviews`. They stayed the same when we changed the day range and the language, so they are Steam's all-time totals.
+- [x] Can we ask for only the summary? No. `num_per_page=0` still gave us 20 reviews. We ask for 1 review per page instead (`num_per_page=1` works).
+- [x] Page size limit: 100. We asked for 200 and got 100.
+- [x] Cursor: works. Page 2 had no reviews in common with page 1. The totals only come with the first page.
+- [x] Review identifier: `recommendationid`.
+- [x] Unreleased game: no error, just zeros and the label `No user reviews`. A wrong appid gives us no usable summary (we did not look at exactly what Steam sent), so we skip it.
+- [x] Rate limit: Steam publishes none. Our full run of 162 requests (games and reviews) at one request every 2 seconds gave no 429.
+
+**Decision:** we store only the totals, one row per game per run (see section 4). Loading every review would mean thousands of requests: Stellaris alone has about 77,000 reviews, which is about 770 pages of 100.
 
 ### Step 3 — `GetNumberOfCurrentPlayers`
 
@@ -114,13 +127,13 @@ Questions: the response has no timestamp, so we must add our own collection time
 | Games table | Current values or price history? | Decide after step 1 | **Decided:** `append` with our own `collected_at`, so price and discount history builds up |
 | Prices | Convert in raw? | Keep Steam's values | **Decided:** keep integer minor units plus currency in raw; convert in dbt staging |
 | Nested data | Flatten or keep as JSON? | Let dlt unnest, then review | **Decided:** lists stored as JSON (`VARIANT`) in one column; dbt unpacks later |
-| Reviews | How do we avoid duplicates? | Use `recommendationid` as the key | Open |
-| Reviews | Full load or incremental? | Start small, then incremental | Open |
+| Reviews | How do we avoid duplicates? | Use `recommendationid` as the key | **Decided:** not needed. We store totals, not single reviews, so there is no review id to check. It is one row per game per run, like `games`. |
+| Reviews | Full load or incremental? | Start small, then incremental | **Decided:** a snapshot of the totals on every run (`append`). Single reviews are not loaded. We can add them later if the thesis needs playtime or language. |
 | Player counts | How to build history? | Append a row per collection with a timestamp | Open |
-| Table names | `games`, `reviews`, `player_counts` | Provisional | `games` confirmed; the others are open |
+| Table names | `games`, `reviews`, `player_counts` | Provisional | `games` and `review_summary` confirmed (we renamed `reviews`, because it holds totals, not reviews); `player_counts` is open |
 | Orchestration | Airflow? | Later, in Docker | **Decided:** no Airflow for now. A scheduled batch script comes later; Airflow is future work. |
 
-dlt **write dispositions**: `replace`, `append`, `merge`. We chose `append` for `games`. We expect `merge` on `recommendationid` for `reviews`.
+dlt **write dispositions**: `replace`, `append`, `merge`. We chose `append` for both `games` and `review_summary`. We would only use `merge` on `recommendationid` if we ever load single reviews.
 
 ---
 
@@ -131,8 +144,10 @@ src/steam_data_platform/
 ├── settings.py              # GAME_APPIDS, store country/language, request pause
 ├── connections.py           # Snowflake credentials from environment variables
 └── ingestion/
-    ├── steam.py             # extraction function + dlt source and resources
+    ├── steam.py             # request helpers + dlt source and resources (games, review_summary)
     └── pipelines_steam.py   # creates the dlt pipeline and runs it
+tests/
+└── test_steam_dlt.py        # tests with fake Steam answers (no network, no Snowflake)
 ```
 
 This follows the pattern of the reference repository (`<source>.py` and `pipelines_<source>.py`).
@@ -144,7 +159,7 @@ Build order:
 3. ~~Load into a local test destination~~ Skipped on purpose: we do not use DuckDB in this project. We load straight into Snowflake `STEAM_RAW`.
 4. Load into Snowflake `STEAM_RAW`. (Done for `games`)
 
-Run command ONLY ONCE A DAY MAX!
+Run command ONLY ONCE A DAY MAX! One run now loads both `games` and `review_summary`: 162 requests, about 7 minutes.
 
 ```bash
 uv run --env-file .env python -m steam_data_platform.ingestion.pipelines_steam
@@ -194,12 +209,12 @@ Player counts and prices only exist from the day we start collecting them, so an
 ## 8. Next Steps
 
 1. ~~Inspect `appdetails`, pick the games, build the extraction, load into `STEAM_RAW`.~~ Done on 2026-10-23.
-2. Run the open queries in `notebooks/01_eda_games.ipynb` (sections 2, 8, 9, 10) and record the results.
-3. Add a progress line to the load log; decide the rule for repeated runs.
-4. Commit this work (small commits on `feat/steam-dlt-ingestion`).
-5. Probe `appreviews`, then build the `reviews` resource.
-6. Probe `GetNumberOfCurrentPlayers`, then build the `player_counts` resource.
-7. Tests with mocked HTTP, then a scheduled run with a non-interactive Snowflake login.
+2. ~~Probe the reviews endpoint, build the `review_summary` resource, write tests and the notebook.~~ Done on 2026-10-26.
+3. Run `uv run pytest -q` once more (the 19 tests passed, but `ruff format` changed the test file afterwards), then commit the reviews work in small commits on `feat/steam-reviews-ingestion`. Ask before committing.
+4. Notebook 01: the outputs for sections 2, 8, 9 and 10 now exist, but the text still says "not yet run". Update the text.
+5. Probe `GetNumberOfCurrentPlayers`, then build the `player_counts` resource.
+6. Small clean-ups: let `fetch_app_details` use `get_with_retry` too (it still has its own copy of the retry code), and add a progress line to the `games` resource (only `review_summary` has one).
+7. Decide the rule for repeated runs (proposal: one run per day) and set up a scheduled run with a non-interactive Snowflake login.
 8. dbt work on separate branches (`feat/dbt-sources`, `feat/dbt-staging`, ...), after ingestion.
 
 ---
@@ -216,3 +231,9 @@ Short notes after each session (decisions, problems, solutions, resources). Thes
 | 2026-10-23 | Full load: 81 fetched, 0 skipped, 0 failed, about 3.5 minutes at a 2 s pause, no 429. The run is silent while it fetches, so a progress line is still to be added. |
 | 2026-10-23 | Validated the table in Snowsight, now recorded in `notebooks/01_eda_games.ipynb`. All 12 compared names match. Only *The Kings' Crusade* has an empty publisher list. `collected_at` is `TIMESTAMP_LTZ`, lists are `VARIANT`. 36 of 81 have no Metacritic score; 4 unreleased games; 2 free games; 2 games without a price not yet explained. Staging rules proposed in the notebook (prices / 100, date parsing, UTC, flatten lists, decode HTML entities). |
 | 2026-10-23 | Open: 2 games without a price, full `type` check, 81-name comparison, repeated-run rule, `DLT_USER` account type and non-interactive login, `duckdb` still listed in the `dev` dependency group (we do not use it), notebook queries for sections 2, 8, 9, 10 not yet run. Nothing committed yet. |
+| 2026-10-26 | Tested the reviews endpoint with real requests (about 6 per probe, one game). The Store URL `store.steampowered.com/appreviews/...` redirects to the Store home page in all 3 versions we tried, so we dropped it (cause unknown). `IUserReviewsService/GetAppReviews` works without a key. `query_summary` holds the all-time totals. `num_per_page=0` does not give a summary only (it returned 20 reviews), the page size stops at 100, and the cursor works. An unreleased game gives zeros, and a wrong appid gives no usable summary. |
+| 2026-10-26 | Decided to store only the review totals (one row per game per run, `append`), not single reviews. Stellaris alone has about 77,000 reviews, which is about 770 requests for one game. Columns: `steam_appid`, `collected_at`, `review_score`, `review_score_desc`, `total_positive`, `total_negative`, `total_reviews`. This gives a sentiment history over time and needs only 81 requests per run. |
+| 2026-10-26 | Wrote `get_with_retry`, `fetch_review_summary`, `build_review_row` and the `review_summary` resource in `steam.py`, with a progress line every 10 games. Tested the fetch on 3 apps (Stellaris, an unreleased game, a fake id) before loading anything: the 3 behaved as expected. Wrote 19 tests with fake Steam answers. One failed at first because dlt wraps errors raised inside a resource in its own `ResourceExtractionError`. The code was right and the test was wrong, so we fixed the test. A second failure came from pasting the new test below the old one in the file, so the old copy was still there. Emptying the file before pasting fixed it. |
+| 2026-10-26 | Full run, one time: `games` and `review_summary` together, 162 requests, about 7 minutes (12:29 to 12:36 Stockholm time), no 429, load id `1793014149.3994608`. dlt alternates between the two resources one row at a time, so it stays one request at a time (about 2.5 seconds each). In Snowsight: 81 rows in `REVIEW_SUMMARY` with a single `collected_at`, no game without a summary, and `GAMES` now has two snapshots (81 rows each). |
+| 2026-10-26 | Notebook 02 results: no duplicates, counts always add up (positive + negative = total), no NULLs. 5 games have no reviews: 4 unreleased games and *Knights of Pen and Paper 2: Free Edition* (released, free, reason unknown). 43 of 81 games have fewer than 1,000 reviews, so their percent positive is noisy. Steam's labels follow clear percent bands (below 40 %, 40 to 70 %, 70 to 80 %, 80 % and up), but `review_score = 0` is used for both "no reviews" and "1 user review", and the label is free text (for example `1 user reviews`). 9 proposals for dbt staging are in section 10 of the notebook. |
+| 2026-10-26 | Open: why the Free Edition has no reviews; minimum number of reviews for comparisons (100 is only a proposal); whether a total can go down between runs (needs more than one run); price against sentiment (no correlation calculated yet); repeated-run rule; `DLT_USER` account type and non-interactive login. `duckdb` is no longer in `pyproject.toml` (checked). Nothing committed yet. |

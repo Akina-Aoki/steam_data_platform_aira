@@ -7,7 +7,7 @@ Loaded the **number of players right now** for the same 81 Paradox Interactive g
 This is the third ingestion step. With it, the extract and load part (dlt) is done for all three sources.
 
 **Branch:** `feat/steam-player-counts-ingestion`
-**Status:** Built, tested and loaded on 2026-10-27. The commits and the pull request are still to do.
+**Status:** Completed and merged into `main` (2026-10-27, pull request #7)
 
 ```text
 Steam GetNumberOfCurrentPlayers (api.steampowered.com)
@@ -190,6 +190,7 @@ uv run --env-file .env python -m steam_data_platform.ingestion.pipelines_steam
 | Column types | As in section 5 |
 | Games without data | 4, all unreleased (`coming_soon = True`): Prison Architect 2, LEGO Skylines, Guardians of the Wild Sky, Afterworld. All have `result` 42 and a NULL count. |
 | Zero players | 13 released games have a real `0`. Steam answered them normally. |
+| Result codes | `result` 1 for all 77 rows with a count (64 above zero, 13 zero). `result` 42 for the 4 rows without a count. So `result = 1` marks a row with data. |
 | Spread | Highest: Hearts of Iron IV with 26,021. About 35 of the 77 games with a count have 10 players or fewer. This is a hand count from the export. |
 | Time | The rows run from 09:43:19 to 09:53:27 UTC, each with its own `collected_at` |
 | Snapshots | `GAMES` now has 3 snapshots of 81 rows (plus one old Portal 2 test row). `REVIEW_SUMMARY` has 2. |
@@ -215,7 +216,6 @@ These are proposals, to confirm when we build the staging models. The full table
 
 - **One moment, not a daily number.** "Players right now" depends on the hour. A daily snapshot at a random time is a weak measure. More frequent snapshots are possible later but are out of scope.
 - **Small games are noise.** For a game with 1 or 2 players, a difference says nothing.
-- **Result codes of the 13 zero rows:** we expect all of them to have `result` 1, but we have not checked it yet. The `has_player_data` rule in dbt depends on it.
 - **What 42 means:** unverified. We only know that Steam sent it together with a 404 and no count.
 - **Released game with no data:** not seen yet.
 - **Why *Knights of Pen and Paper 2: Free Edition* has 0 players and no reviews:** unknown.
@@ -240,6 +240,5 @@ These are proposals, to confirm when we build the staging models. The full table
 
 ## Next Steps
 
-1. Commit the player counts work in small steps and open the pull request.
-2. A scheduled run with a non-interactive Snowflake login, at about the same clock time every day.
-3. dbt sources and staging on their own branches (`feat/dbt-sources`, `feat/dbt-staging`, ...).
+1. A scheduled run with a non-interactive Snowflake login, at about the same clock time every day.
+2. dbt sources and staging on their own branches (`feat/dbt-sources`, `feat/dbt-staging`, ...).

@@ -235,3 +235,142 @@ def test_build_game_row_free_game_has_no_price():
     assert row["steam_appid"] == 1
     assert row["price_final"] is None
     assert row["developers"] == []
+
+
+# --- get_with_retry: accept_statuses --------------------------------------
+
+
+def test_get_with_retry_returns_an_accepted_status_without_retrying(patch_get, sleeps):
+    not_found = FakeResponse(404, {"response": {"result": 42}})
+    calls = patch_get([not_found])
+
+    assert (
+        steam.get_with_retry("http://x", {}, "test", accept_statuses=(404,))
+        is not_found
+    )
+    assert len(calls) == 1
+    assert sleeps == []
+
+
+def test_get_with_retry_accept_statuses_does_not_cover_other_4xx(patch_get, sleeps):
+    calls = patch_get([FakeResponse(403)])
+
+    with pytest.raises(requests.HTTPError):
+        steam.get_with_retry("http://x", {}, "test", accept_statuses=(404,))
+    assert len(calls) == 1
+
+
+# --- fetch_player_count ---------------------------------------------------
+
+GOOD_PLAYERS = {"player_count": 7992, "result": 1}
+NO_DATA_PLAYERS = {"player_count": None, "result": 42}
+
+
+def test_fetch_player_count_returns_the_count(patch_get, sleeps):
+    patch_get([FakeResponse(200, {"response": {"player_count": 7992, "result": 1}})])
+
+    assert steam.fetch_player_count(281990) == GOOD_PLAYERS
+
+
+def test_fetch_player_count_keeps_zero_as_zero(patch_get, sleeps):
+    """Zero players is a real answer; it must not turn into None."""
+    patch_get([FakeResponse(200, {"response": {"player_count": 0, "result": 1}})])
+
+    answer = steam.fetch_player_count(1)
+
+    assert answer == {"player_count": 0, "result": 1}
+    assert answer["player_count"] is not None
+
+
+def test_fetch_player_count_404_is_no_data_not_zero(patch_get, sleeps):
+    """Steam answers 404 with result 42 for unreleased games and wrong ids."""
+    calls = patch_get([FakeResponse(404, {"response": {"result": 42}})])
+
+    assert steam.fetch_player_count(1257610) == NO_DATA_PLAYERS
+    assert len(calls) == 1  # a 404 is an answer, not something to retry
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        [],
+        None,
+        {"response": []},
+        {"response": {"player_count": 5}},  # no result code
+        {"response": {"result": "1"}},  # result is not a number
+        {"response": {"result": 1, "player_count": "12"}},  # count is not a number
+    ],
+)
+def test_fetch_player_count_returns_none_for_unusable_answers(patch_get, sleeps, body):
+    patch_get([FakeResponse(200, body)])
+
+    assert steam.fetch_player_count(1) is None
+
+
+def test_fetch_player_count_returns_none_when_not_json(patch_get, sleeps):
+    patch_get([FakeResponse(200, json_error=True)])
+
+    assert steam.fetch_player_count(1) is None
+
+
+# --- build_player_row -----------------------------------------------------
+
+
+def test_build_player_row_keeps_a_missing_count_as_none():
+    row = steam.build_player_row(1257610, NO_DATA_PLAYERS, COLLECTED_AT)
+
+    assert row == {
+        "steam_appid": 1257610,
+        "collected_at": COLLECTED_AT,
+        "player_count": None,
+        "result": 42,
+    }
+
+
+# --- player_counts resource -----------------------------------------------
+
+
+def test_player_counts_keeps_zero_and_no_data_and_skips_bad_games(monkeypatch, sleeps):
+    answers = {
+        1: GOOD_PLAYERS,
+        2: {"player_count": 0, "result": 1},
+        3: NO_DATA_PLAYERS,
+    }
+
+    def fake_fetch(appid):
+        if appid == 4:
+            return None  # unusable answer
+        if appid == 5:
+            raise steam.SteamRequestError("boom")  # failed after retries
+        return answers[appid]
+
+    monkeypatch.setattr(steam, "fetch_player_count", fake_fetch)
+
+    rows = list(steam.player_counts([1, 2, 3, 4, 5]))
+
+    assert [row["steam_appid"] for row in rows] == [1, 2, 3]
+    # 0 players and "no data" stay apart.
+    assert [row["player_count"] for row in rows] == [7992, 0, None]
+    assert [row["result"] for row in rows] == [1, 1, 42]
+    # Each row has its own time, taken in order.
+    times = [row["collected_at"] for row in rows]
+    assert all(time.tzinfo is not None for time in times)
+    assert times == sorted(times)
+
+
+def test_player_counts_stops_the_run_on_rate_limit(monkeypatch, sleeps):
+    asked: list[int] = []
+
+    def fake_fetch(appid):
+        asked.append(appid)
+        if appid == 2:
+            raise steam.SteamRateLimitError("429")
+        return GOOD_PLAYERS
+
+    monkeypatch.setattr(steam, "fetch_player_count", fake_fetch)
+
+    with pytest.raises(ResourceExtractionError) as error:
+        list(steam.player_counts([1, 2, 3]))
+    assert isinstance(error.value.__cause__, steam.SteamRateLimitError)
+    assert asked == [1, 2]  # game 3 was never requested

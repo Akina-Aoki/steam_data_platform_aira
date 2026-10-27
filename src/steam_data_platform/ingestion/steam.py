@@ -1,4 +1,4 @@
-"""dlt source for the Steam Store `appdetails` and review endpoints (no API key needed)."""
+"""dlt source for the Steam Store `appdetails`, review and player count endpoints (no API key needed)."""
 
 import json
 import logging
@@ -23,6 +23,9 @@ MAX_ATTEMPTS = 3
 PROGRESS_EVERY = 10  # log a progress line every 10 games
 BACKOFF_SECONDS = 30  # waits 30s after attempt 1, 60s after attempt 2
 REVIEWS_URL = "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/"
+PLAYERS_URL = (
+    "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/"
+)
 
 
 class SteamRequestError(RuntimeError):
@@ -79,11 +82,18 @@ def fetch_app_details(appid: int) -> dict | None:
     raise SteamRequestError(message)
 
 
-def get_with_retry(url: str, params: dict, label: str) -> requests.Response:
+def get_with_retry(
+    url: str,
+    params: dict,
+    label: str,
+    accept_statuses: tuple[int, ...] = (),
+) -> requests.Response:
     """GET with a timeout; retries timeouts, 5xx and 429 with a growing pause.
 
-    Raises SteamRateLimitError if the last attempt was still a 429, and
-    SteamRequestError for other problems that outlast all attempts.
+    Status codes in `accept_statuses` (for example 404) are returned as normal
+    answers instead of raising, for endpoints where Steam uses them to say
+    "no data". Raises SteamRateLimitError if the last attempt was still a 429,
+    and SteamRequestError for other problems that outlast all attempts.
     """
     problem = ""
 
@@ -96,7 +106,8 @@ def get_with_retry(url: str, params: dict, label: str) -> requests.Response:
             if response.status_code == 429 or response.status_code >= 500:
                 problem = f"HTTP {response.status_code}"
             else:
-                response.raise_for_status()  # any other 4xx is a bug on our side
+                if response.status_code not in accept_statuses:
+                    response.raise_for_status()  # any other 4xx is a bug on our side
                 return response
 
         if attempt < MAX_ATTEMPTS:
@@ -137,6 +148,32 @@ def fetch_review_summary(appid: int) -> dict | None:
     if not isinstance(summary, dict) or "total_reviews" not in summary:
         return None
     return summary
+
+
+def fetch_player_count(appid: int) -> dict | None:
+    """Call GetNumberOfCurrentPlayers for ONE game.
+
+    Returns {"player_count": int or None, "result": int}. Steam answers 404 with
+    result 42 and no player_count when it has no data (unreleased game, wrong
+    id). That is "no data", not 0 players, so the count stays None.
+    Returns None if the answer is not usable at all.
+    """
+    response = get_with_retry(
+        PLAYERS_URL, {"appid": appid}, f"appid {appid}", accept_statuses=(404,)
+    )
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    block = body.get("response")
+    if not isinstance(block, dict) or not isinstance(block.get("result"), int):
+        return None
+    count = block.get("player_count")
+    if count is not None and not isinstance(count, int):
+        return None
+    return {"player_count": count, "result": block["result"]}
 
 
 def build_game_row(data: dict, collected_at: datetime) -> dict:
@@ -187,6 +224,16 @@ def build_review_row(appid: int, summary: dict, collected_at: datetime) -> dict:
         "total_positive": summary.get("total_positive"),
         "total_negative": summary.get("total_negative"),
         "total_reviews": summary.get("total_reviews"),
+    }
+
+
+def build_player_row(appid: int, answer: dict, collected_at: datetime) -> dict:
+    """Keep Steam's count and result code as sent; a missing count stays None."""
+    return {
+        "steam_appid": appid,
+        "collected_at": collected_at,
+        "player_count": answer["player_count"],
+        "result": answer["result"],
     }
 
 
@@ -292,7 +339,67 @@ def review_summary(appids: list[int]) -> Iterator[dict]:
     )
 
 
+@dlt.resource(
+    name="player_counts",
+    # append = one new row per game per run, so player activity builds a history.
+    write_disposition="append",
+    columns={
+        "collected_at": {"data_type": "timestamp"},
+        # Set the types ourselves, so a batch with NULL counts cannot confuse dlt.
+        "player_count": {"data_type": "bigint"},
+        "result": {"data_type": "bigint"},
+    },
+)
+def player_counts(appids: list[int]) -> Iterator[dict]:
+    """One row per game per collection run with the players right now.
+
+    A game Steam has no data for (result 42) still gets a row, with a NULL
+    count. A game that cannot be fetched is logged and skipped. If Steam keeps
+    answering 429 we stop the whole run instead of hammering it.
+    """
+    with_count = no_data = skipped = failed = 0
+
+    for position, appid in enumerate(appids):
+        if position > 0:
+            if position % PROGRESS_EVERY == 0:
+                logger.info("player_counts: %s of %s games done", position, len(appids))
+            time.sleep(REQUEST_PAUSE_SECONDS)
+        try:
+            answer = fetch_player_count(appid)
+        except SteamRateLimitError:
+            logger.error("Steam rate limit hit at appid %s; stopping the run", appid)
+            raise
+        except (SteamRequestError, requests.RequestException) as error:
+            failed += 1
+            logger.error("appid %s: failed, skipping (%s)", appid, error)
+            continue
+        # A player count is one moment, so each row gets its own time (taken
+        # right after Steam answered), not one time for the whole run.
+        collected_at = datetime.now(UTC)
+
+        if answer is None:
+            skipped += 1
+            logger.warning("appid %s: unusable player count answer, skipping", appid)
+            continue
+
+        if answer["player_count"] is None:
+            no_data += 1
+        else:
+            with_count += 1
+        yield build_player_row(appid, answer, collected_at)
+
+    logger.info(
+        "player_counts: %s with a count, %s without data, %s skipped, %s failed, "
+        "of %s requested",
+        with_count,
+        no_data,
+        skipped,
+        failed,
+        len(appids),
+    )
+
+
 @dlt.source(name="steam")
 def steam_source(appids: list[int]):
     """Groups the Steam resources so they load together in one pipeline."""
-    return games(appids), review_summary(appids)
+    return games(appids), review_summary(appids), player_counts(appids)

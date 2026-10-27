@@ -6,14 +6,15 @@ This document plans how we take data from Steam and land it in Snowflake `STEAM_
 
 **Scope of this phase:** API extraction and loading only. No dbt models, dimensional modeling, Airflow, Docker, or dashboards yet.
 
-**Status on 2026-10-26:**
+**Status on 2026-10-27:**
 
 - Snowflake warehouse, database, schemas, roles, and users are set up and tested.
 - dbt Core is set up, but there are no models yet.
 - **Games** (Store `appdetails`) are done and merged into `main`. `STEAM_DB.STEAM_RAW.GAMES` has two snapshots of the 81 Paradox Interactive games (2026-10-23 and 2026-10-26), plus one old Portal 2 test row. Notebook: `notebooks/01_eda_games.ipynb`.
 - **Review totals** (`review_summary`) are done: built, tested and loaded on 2026-10-26. `STEAM_DB.STEAM_RAW.REVIEW_SUMMARY` has 81 rows (load id `1793014149.3994608`). Notebook: `notebooks/02_eda_reviews.ipynb`. Tests: `tests/test_steam_dlt.py`.
-- **Player counts:** not started.
-- The reviews work is on branch `feat/steam-reviews-ingestion` and is **not committed yet**.
+- The reviews work is committed and merged into `main` (pull request #6, 2026-10-26). Doc: `docs/06_reviews__dlt_ingestion.md`.
+- **Player counts** (`player_counts`) are done: built, tested and loaded on 2026-10-27, and merged into `main` (pull request #7). `STEAM_DB.STEAM_RAW.PLAYER_COUNTS` has 81 rows (load id `1793094197.9862032`): 77 with a count (13 of them a real 0) and 4 without data (the 4 unreleased games, `result` 42). Notebook: `notebooks/03_eda_player_counts.ipynb`. Doc: `docs/07_player_counts__dlt_ingestion.md`. Tests: 35 in `tests/test_steam_dlt.py`.
+- **The dlt extract and load part is done for all three sources.** dbt is the next phase.
 - This replaces the earlier Aviation Nomad data source (Aviationstack) with Steam.
 
 ---
@@ -26,7 +27,7 @@ We use three public endpoints. None of them needs a Steam Web API key (my accoun
 |---|---|---|---|
 | 1 | Store `appdetails` | Title, genres, price, developer, publisher, release date | Verified and loaded (2026-10-23) |
 | 2 | `IUserReviewsService/GetAppReviews` (the Store `appreviews` URL does not work for us) | Total thumbs up and thumbs down per game, plus a score and label. It can also return single reviews, but we do not load them | Verified and loaded (2026-10-26) |
-| 3 | `ISteamUserStats/GetNumberOfCurrentPlayers` | Number of players in the game right now | To verify |
+| 3 | `ISteamUserStats/GetNumberOfCurrentPlayers` | Number of players in the game right now. Unreleased games and wrong ids give HTTP 404 with `result` 42 and no count | Verified and loaded (2026-10-27) |
 
 URLs to test (Portal 2, `appid=620`):
 
@@ -65,7 +66,7 @@ We finish one endpoint completely before starting the next.
 
 **Order:** `appdetails` → `appreviews` → `GetNumberOfCurrentPlayers`
 
-### Step 1 — `appdetails` (done, 2026-10-23)
+### Step 1  `appdetails` (done, 2026-10-23)
 
 **Goal:** Understand the response before writing any dlt code.
 
@@ -95,7 +96,7 @@ Fields to inspect:
 
 **Done when:** we can describe the response structure in our own words and have chosen which fields to keep. (Done.)
 
-### Step 2 — reviews (done, 2026-10-26)
+### Step 2  reviews (done, 2026-10-26)
 
 **Goal:** see what the reviews endpoint really returns, then decide what to store.
 
@@ -113,9 +114,23 @@ Checklist:
 
 **Decision:** we store only the totals, one row per game per run (see section 4). Loading every review would mean thousands of requests: Stellaris alone has about 77,000 reviews, which is about 770 pages of 100.
 
-### Step 3 — `GetNumberOfCurrentPlayers`
+### Step 3  `GetNumberOfCurrentPlayers` (done, 2026-10-27)
 
-Questions: the response has no timestamp, so we must add our own collection time. How often would we collect it? How do we handle games that return no count?
+**Goal:** see what the endpoint really returns, then decide what to store.
+
+Checklist (probe of 6 requests, 2 s apart; details in `docs/07_player_counts__dlt_ingestion.md`):
+
+- [x] Does it work without a key? Yes. A normal game gives HTTP 200 and `{"response": {"player_count": N, "result": 1}}`, with `player_count` as an integer.
+- [x] Unreleased game (Prison Architect 2): HTTP **404**, `{"response": {"result": 42}}`, no `player_count`.
+- [x] Fake appid (99999999): the same as an unreleased game (404, result 42). So the code alone does not tell "unreleased" from "wrong id".
+- [x] The text `<appid>` instead of a number: HTTP 200 with a huge count (26,494,868) and `result` 1. Steam does not check that the id is a number. We do not know what that number counts. We only send ids from our own list.
+- [x] No appid: HTTP 400 with an HTML page, not JSON.
+- [x] Timestamp: none in the answer, so we add our own `collected_at`.
+- [x] Rate limit: Steam publishes none. The full run of 243 requests at 2 s gave no 429.
+- [ ] What 42 means exactly: unverified (we believe "no match", from memory).
+- [ ] Whether a released game can ever get 404 / 42: not seen yet.
+
+**Decision:** one row per game per run (`append`). A 404 / `result` 42 is stored as a row with `player_count` NULL, and a real 0 stays 0. `collected_at` is taken per row. See section 4.
 
 ---
 
@@ -129,8 +144,11 @@ Questions: the response has no timestamp, so we must add our own collection time
 | Nested data | Flatten or keep as JSON? | Let dlt unnest, then review | **Decided:** lists stored as JSON (`VARIANT`) in one column; dbt unpacks later |
 | Reviews | How do we avoid duplicates? | Use `recommendationid` as the key | **Decided:** not needed. We store totals, not single reviews, so there is no review id to check. It is one row per game per run, like `games`. |
 | Reviews | Full load or incremental? | Start small, then incremental | **Decided:** a snapshot of the totals on every run (`append`). Single reviews are not loaded. We can add them later if the thesis needs playtime or language. |
-| Player counts | How to build history? | Append a row per collection with a timestamp | Open |
-| Table names | `games`, `reviews`, `player_counts` | Provisional | `games` and `review_summary` confirmed (we renamed `reviews`, because it holds totals, not reviews); `player_counts` is open |
+| Player counts | How to build history? | Append a row per collection with a timestamp | **Decided:** `append`, one row per game per run, columns `steam_appid`, `collected_at`, `player_count`, `result` |
+| Player counts | What about games Steam has no data for (404, result 42)? | Skip them, as with reviews | **Decided:** keep a row with `player_count` NULL and `result` 42. Every run then has 81 rows, and "no data" is kept apart from a real 0. Only unusable answers are skipped. |
+| Player counts | Which time goes in `collected_at`? | One time per run, as in the other tables | **Decided:** one time **per row**, right after Steam answers. A count is one moment and a run takes about 10 minutes. |
+| Retry helper | How do we treat a 404? | Raise an error for every 4xx | **Decided:** `get_with_retry` takes an optional `accept_statuses` (we pass 404). Other 4xx still raise. |
+| Table names | `games`, `reviews`, `player_counts` | Provisional | **Confirmed:** `games`, `review_summary` (renamed from `reviews`, because it holds totals) and `player_counts` |
 | Orchestration | Airflow? | Later, in Docker | **Decided:** no Airflow for now. A scheduled batch script comes later; Airflow is future work. |
 
 dlt **write dispositions**: `replace`, `append`, `merge`. We chose `append` for both `games` and `review_summary`. We would only use `merge` on `recommendationid` if we ever load single reviews.
@@ -144,7 +162,7 @@ src/steam_data_platform/
 ├── settings.py              # GAME_APPIDS, store country/language, request pause
 ├── connections.py           # Snowflake credentials from environment variables
 └── ingestion/
-    ├── steam.py             # request helpers + dlt source and resources (games, review_summary)
+    ├── steam.py             # request helpers + dlt source and resources (games, review_summary, player_counts)
     └── pipelines_steam.py   # creates the dlt pipeline and runs it
 tests/
 └── test_steam_dlt.py        # tests with fake Steam answers (no network, no Snowflake)
@@ -157,9 +175,9 @@ Build order:
 1. Plain `requests` function, tested on its own. (Done)
 2. Wrap it in a dlt resource. (Done)
 3. ~~Load into a local test destination~~ Skipped on purpose: we do not use DuckDB in this project. We load straight into Snowflake `STEAM_RAW`.
-4. Load into Snowflake `STEAM_RAW`. (Done for `games`)
+4. Load into Snowflake `STEAM_RAW`. (Done for `games`, `review_summary` and `player_counts`)
 
-Run command ONLY ONCE A DAY MAX! One run now loads both `games` and `review_summary`: 162 requests, about 7 minutes.
+Run command ONLY ONCE A DAY MAX! One run now loads `games`, `review_summary` and `player_counts`: 243 requests, about 10 minutes. Start it at about the same clock time every day, because a player count depends on the hour.
 
 ```bash
 uv run --env-file .env python -m steam_data_platform.ingestion.pipelines_steam
@@ -210,9 +228,9 @@ Player counts and prices only exist from the day we start collecting them, so an
 
 1. ~~Inspect `appdetails`, pick the games, build the extraction, load into `STEAM_RAW`.~~ Done on 2026-10-23.
 2. ~~Probe the reviews endpoint, build the `review_summary` resource, write tests and the notebook.~~ Done on 2026-10-26.
-3. Run `uv run pytest -q` once more (the 19 tests passed, but `ruff format` changed the test file afterwards), then commit the reviews work in small commits on `feat/steam-reviews-ingestion`. Ask before committing.
+3. ~~Commit the reviews work in small commits.~~ Done: merged in pull request #6 (2026-10-26).
 4. Notebook 01: the outputs for sections 2, 8, 9 and 10 now exist, but the text still says "not yet run". Update the text.
-5. Probe `GetNumberOfCurrentPlayers`, then build the `player_counts` resource.
+5. ~~Probe `GetNumberOfCurrentPlayers`, build the `player_counts` resource, tests, first run, notebook 03, docs 06 and 07.~~ Done: merged in pull request #7 (2026-10-27).
 6. Small clean-ups: let `fetch_app_details` use `get_with_retry` too (it still has its own copy of the retry code), and add a progress line to the `games` resource (only `review_summary` has one).
 7. Decide the rule for repeated runs (proposal: one run per day) and set up a scheduled run with a non-interactive Snowflake login.
 8. dbt work on separate branches (`feat/dbt-sources`, `feat/dbt-staging`, ...), after ingestion.
@@ -237,3 +255,11 @@ Short notes after each session (decisions, problems, solutions, resources). Thes
 | 2026-10-26 | Full run, one time: `games` and `review_summary` together, 162 requests, about 7 minutes (12:29 to 12:36 Stockholm time), no 429, load id `1793014149.3994608`. dlt alternates between the two resources one row at a time, so it stays one request at a time (about 2.5 seconds each). In Snowsight: 81 rows in `REVIEW_SUMMARY` with a single `collected_at`, no game without a summary, and `GAMES` now has two snapshots (81 rows each). |
 | 2026-10-26 | Notebook 02 results: no duplicates, counts always add up (positive + negative = total), no NULLs. 5 games have no reviews: 4 unreleased games and *Knights of Pen and Paper 2: Free Edition* (released, free, reason unknown). 43 of 81 games have fewer than 1,000 reviews, so their percent positive is noisy. Steam's labels follow clear percent bands (below 40 %, 40 to 70 %, 70 to 80 %, 80 % and up), but `review_score = 0` is used for both "no reviews" and "1 user review", and the label is free text (for example `1 user reviews`). 9 proposals for dbt staging are in section 10 of the notebook. |
 | 2026-10-26 | Open: why the Free Edition has no reviews; minimum number of reviews for comparisons (100 is only a proposal); whether a total can go down between runs (needs more than one run); price against sentiment (no correlation calculated yet); repeated-run rule; `DLT_USER` account type and non-interactive login. `duckdb` is no longer in `pyproject.toml` (checked). Nothing committed yet. |
+| 2026-10-26 | Reviews work committed in small commits, pushed and merged into `main` (pull request #6). |
+| 2026-10-27 | Probed `GetNumberOfCurrentPlayers` with 6 requests. Normal games: HTTP 200, `result` 1, integer `player_count`. Unreleased game and fake appid: HTTP **404**, `result` 42, no `player_count`. The text `<appid>` instead of a number gave HTTP 200 with a huge count (26,494,868) and `result` 1, so Steam does not check the id and `result` 1 alone does not prove the number belongs to the right game (we do not know what that number counts). No appid: HTTP 400 with an HTML page. |
+| 2026-10-27 | Design: table `player_counts`, `append`, one row per game per run, columns `steam_appid`, `collected_at`, `player_count`, `result`. A 404 / `result` 42 is kept as a row with a NULL count (so every run has 81 rows and "no data" stays apart from a real 0). `collected_at` is taken per row. `get_with_retry` got an optional `accept_statuses` (we pass 404), because it used to raise an error on every 4xx and would have counted the 4 unreleased games as failed in every run. |
+| 2026-10-27 | Built `fetch_player_count`, `build_player_row` and the `player_counts` resource (progress line every 10 games). Tried it on 3 apps without Snowflake: 1 row with a count, 2 rows with a NULL count and `result` 42. Wrote 16 new tests (35 in total, all passing). `ruff` clean. |
+| 2026-10-27 | Full run, one time: all three resources, 243 requests, 10:43 to 10:53 Stockholm time, no 429, load id `1793094197.9862032`. `games` 81 fetched, `review_summary` 81 fetched, `player_counts` 77 with a count, 4 without data, 0 skipped, 0 failed. |
+| 2026-10-27 | Validated `PLAYER_COUNTS` in Snowsight, recorded in `notebooks/03_eda_player_counts.ipynb`. 81 rows, 81 games, one load id. The 4 rows without data are the 4 unreleased games. 13 released games have a real 0. Result code check: `result` 1 for all 77 rows with a count (64 above zero, 13 zero), `result` 42 for the 4 without a count. Highest: Hearts of Iron IV with 26,021. About 35 of the 77 have 10 players or fewer (hand count). Staging proposals are in section 10 of the notebook. |
+| 2026-10-27 | Wrote `docs/06_reviews__dlt_ingestion.md` and `docs/07_player_counts__dlt_ingestion.md` (decisions with reasons, code map with links to lines). Pushed and merged into `main` (pull request #7, `main` at `c1aa1bc`). Typos met on the way: `stream` instead of `steam` in a push command, and a new branch needs `git push --set-upstream`. |
+| 2026-10-27 | Open: what `result` 42 means exactly (unverified); whether a released game can ever get 404 / 42; minimum player count for comparisons; why the Free Edition has 0 players and no reviews; repeated-run rule; a scheduled run at about the same clock time with a non-interactive login; notebook 03 sections 2, 4 and 9 and docs 06 and 07 still say the 13 zero rows were not checked, although the check is now done. |

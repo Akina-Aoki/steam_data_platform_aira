@@ -40,17 +40,17 @@ ISteamUserStats/                    ->  player_counts    -> PLAYER_COUNTS
 
 | Step | Resource | Rows per run | Document | Code | Notebook |
 |---|---|---|---|---|---|
-| 1 | `games` | 81 | [05](05_games__dlt_ingestion.md) | [steam.py L240-L290](../src/steam_data_platform/ingestion/steam.py#L240-L290) | [01_eda_games](../notebooks/01_eda_games.ipynb) |
-| 2 | `review_summary` | 81 | [06](06_reviews__dlt_ingestion.md) | [steam.py L293-L339](../src/steam_data_platform/ingestion/steam.py#L293-L339) | [02_eda_reviews](../notebooks/02_eda_reviews.ipynb) |
-| 3 | `player_counts` | 81 | this document | [steam.py L342-L399](../src/steam_data_platform/ingestion/steam.py#L342-L399) | [03_eda_player_counts](../notebooks/03_eda_player_counts.ipynb) |
+| 1 | `games` | 81 | [05](05_games__dlt_ingestion.md) | [steam.py L247-L305](../src/steam_data_platform/ingestion/steam.py#L247-L305) | [01_eda_games](../notebooks/01_eda_games.ipynb) |
+| 2 | `review_summary` | 81 | [06](06_reviews__dlt_ingestion.md) | [steam.py L308-L354](../src/steam_data_platform/ingestion/steam.py#L308-L354) | [02_eda_reviews](../notebooks/02_eda_reviews.ipynb) |
+| 3 | `player_counts` | 81 | this document | [steam.py L357-L416](../src/steam_data_platform/ingestion/steam.py#L357-L416) | [03_eda_player_counts](../notebooks/03_eda_player_counts.ipynb) |
 
 | Shared piece | Function | Code |
 |---|---|---|
-| `steam_source` | Groups the three resources into one dlt source | [steam.py L402-L405](../src/steam_data_platform/ingestion/steam.py#L402-L405) |
+| `steam_source` | Groups the three resources into one dlt source | [steam.py L419-L422](../src/steam_data_platform/ingestion/steam.py#L419-L422) |
 | `steam_pipeline()`, `run_steam_pipeline()` | Builds the pipeline (`pipeline_name="steam"`, `dataset_name="steam_raw"`) and runs the source | [pipelines_steam.py L19-L30](../src/steam_data_platform/ingestion/pipelines_steam.py#L19-L30) |
 | Entry point | Sets up logging, runs the pipeline, logs only the load ids | [pipelines_steam.py L33-L42](../src/steam_data_platform/ingestion/pipelines_steam.py#L33-L42) |
 | `GAME_APPIDS` and the request pause | The 81 games and the 2 s pause | [settings.py](../src/steam_data_platform/settings.py) |
-| `get_with_retry` | The one place that does GET, timeout and retry | [steam.py L85-L128](../src/steam_data_platform/ingestion/steam.py#L85-L128) |
+| `get_with_retry` | The one place that does GET, timeout and retry | [steam.py L69-L120](../src/steam_data_platform/ingestion/steam.py#L69-L120) |
 
 ## 2. Scope and Data Source
 
@@ -60,7 +60,7 @@ ISteamUserStats/                    ->  player_counts    -> PLAYER_COUNTS
 | Endpoint | `https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/` |
 | API key | None needed |
 | Parameter | `appid=<one id>` |
-| Code | [`PLAYERS_URL`](../src/steam_data_platform/ingestion/steam.py#L26-L28) and [`fetch_player_count`](../src/steam_data_platform/ingestion/steam.py#L153-L176) |
+| Code | [`PLAYERS_URL`](../src/steam_data_platform/ingestion/steam.py#L34-L36) and [`fetch_player_count`](../src/steam_data_platform/ingestion/steam.py#L149-L175) |
 
 ## 3. What We Verified About the API
 
@@ -116,13 +116,13 @@ tests/
 
 | Piece | What it does | Code |
 |---|---|---|
-| `get_with_retry(..., accept_statuses=())` | Same helper as before, plus one new option: status codes in `accept_statuses` (we pass `404`) come back as normal answers instead of raising an error. With the default (empty), nothing changes for the other resources. | [steam.py L85-L128](../src/steam_data_platform/ingestion/steam.py#L85-L128) |
-| `fetch_player_count(appid)` | One request per game. Returns `{"player_count": int or None, "result": int}`, or `None` if the answer is not usable at all. | [steam.py L153-L176](../src/steam_data_platform/ingestion/steam.py#L153-L176) |
-| `build_player_row(appid, answer, collected_at)` | Builds one row. A missing count stays `None`. | [steam.py L230-L237](../src/steam_data_platform/ingestion/steam.py#L230-L237) |
-| `player_counts` resource | Loops over the appids, pauses between requests, logs progress every 10 games, takes `collected_at` per row, yields one row per game. `append`, with typed columns. | [steam.py L342-L399](../src/steam_data_platform/ingestion/steam.py#L342-L399) |
-| `steam_source` | Now returns `games`, `review_summary` and `player_counts`. | [steam.py L402-L405](../src/steam_data_platform/ingestion/steam.py#L402-L405) |
+| `get_with_retry(..., accept_statuses=())` | Same helper as before, plus one new option: status codes in `accept_statuses` (we pass `404`) come back as normal answers instead of raising an error. With the default (empty), nothing changes for the other resources. | [steam.py L69-L120](../src/steam_data_platform/ingestion/steam.py#L69-L120) |
+| `fetch_player_count(appid)` | One request per game. Returns `{"player_count": int or None, "result": int}`, or `None` if the answer is not usable at all. | [steam.py L149-L175](../src/steam_data_platform/ingestion/steam.py#L149-L175) |
+| `build_player_row(appid, answer, collected_at)` | Builds one row. A missing count stays `None`. | [steam.py L237-L244](../src/steam_data_platform/ingestion/steam.py#L237-L244) |
+| `player_counts` resource | Loops over the appids, pauses between requests, logs progress every 10 games, takes `collected_at` per row, yields one row per game. `append`, with typed columns. | [steam.py L357-L416](../src/steam_data_platform/ingestion/steam.py#L357-L416) |
+| `steam_source` | Now returns `games`, `review_summary` and `player_counts`. | [steam.py L419-L422](../src/steam_data_platform/ingestion/steam.py#L419-L422) |
 
-**Why the retry helper had to change.** Before, `get_with_retry` treated every 4xx except 429 as a bug on our side and raised an error. For this endpoint a 404 is a normal answer ("no data"). Without the change, the 4 unreleased games would have been counted as *failed* in every run. With `accept_statuses=(404,)` the 404 comes back like any other answer, and `fetch_player_count` reads the body. A 403 or any other 4xx still raises an error ([test](../tests/test_steam_dlt.py#L255-L260)).
+**Why the retry helper had to change.** Before, `get_with_retry` treated every 4xx except 429 as a bug on our side and raised an error. For this endpoint a 404 is a normal answer ("no data"). Without the change, the 4 unreleased games would have been counted as *failed* in every run. With `accept_statuses=(404,)` the 404 comes back like any other answer, and `fetch_player_count` reads the body. A 403 or any other 4xx still raises an error ([test](../tests/test_steam_dlt.py#L284-L289)).
 
 **Columns in `PLAYER_COUNTS`:**
 
@@ -153,14 +153,14 @@ Important to know: if a run stops with an exception, dlt loads nothing from that
 
 ## 7. Tests
 
-16 new tests were added. The test file now has 35 tests, all passing. They use a hand-written `FakeResponse` and `monkeypatch`. No network and no Snowflake.
+16 new tests were added. The test file then had 35 tests, all passing (38 after the clean-up of 2026-10-30, which added 3 tests for `fetch_app_details`). They use a hand-written `FakeResponse` and `monkeypatch`. No network and no Snowflake.
 
 | What is tested | Tests | Code |
 |---|---:|---|
-| `get_with_retry` with `accept_statuses`: an accepted 404 comes back without a retry, a 403 still raises | 2 | [test_steam_dlt.py L240-L260](../tests/test_steam_dlt.py#L240-L260) |
-| `fetch_player_count`: a good count, **zero stays zero**, **404 / 42 gives a NULL count and no retry**, 7 kinds of unusable answers return `None`, not JSON | 11 | [test_steam_dlt.py L263-L314](../tests/test_steam_dlt.py#L263-L314) |
-| `build_player_row`: a missing count stays `None` | 1 | [test_steam_dlt.py L317-L328](../tests/test_steam_dlt.py#L317-L328) |
-| `player_counts` resource: zero and "no data" stay apart, bad games are skipped, each row has its own time in order, repeated 429 stops the run | 2 | [test_steam_dlt.py L331-L376](../tests/test_steam_dlt.py#L331-L376) |
+| `get_with_retry` with `accept_statuses`: an accepted 404 comes back without a retry, a 403 still raises | 2 | [test_steam_dlt.py L269-L289](../tests/test_steam_dlt.py#L269-L289) |
+| `fetch_player_count`: a good count, **zero stays zero**, **404 / 42 gives a NULL count and no retry**, 7 kinds of unusable answers return `None`, not JSON | 11 | [test_steam_dlt.py L292-L343](../tests/test_steam_dlt.py#L292-L343) |
+| `build_player_row`: a missing count stays `None` | 1 | [test_steam_dlt.py L346-L357](../tests/test_steam_dlt.py#L346-L357) |
+| `player_counts` resource: zero and "no data" stay apart, bad games are skipped, each row has its own time in order, repeated 429 stops the run | 2 | [test_steam_dlt.py L360-L405](../tests/test_steam_dlt.py#L360-L405) |
 
 ```bash
 uv run pytest -q
@@ -222,7 +222,7 @@ These are proposals, to confirm when we build the staging models. The full table
 - **History:** a single snapshot of player counts exists. Each run adds 81 rows.
 - **Repeated runs:** proposed rule is one scheduled run per day, and the latest row per game for current-state questions. Not decided.
 - **Login:** `DLT_USER` is a `PERSON` account (password and MFA), yet the load worked with a password only, and we do not know why. A scheduled run needs a non-interactive login, for example key-pair authentication.
-- **Small clean-ups:** `fetch_app_details` still has its own copy of the retry code, and the `games` resource has no progress line.
+- **Small clean-ups:** done on 2026-10-30. `fetch_app_details` now uses `get_with_retry`, and the `games` resource logs a progress line every 10 games.
 - **Undocumented endpoint:** the answer can change without notice.
 
 ## 11. Related Files
@@ -237,6 +237,7 @@ These are proposals, to confirm when we build the staging models. The full table
 | [`notebooks/03_eda_player_counts.ipynb`](../notebooks/03_eda_player_counts.ipynb) | Validation queries, results and findings |
 | [`05_games__dlt_ingestion.md`](05_games__dlt_ingestion.md) | The `games` step |
 | [`06_reviews__dlt_ingestion.md`](06_reviews__dlt_ingestion.md) | The `review_summary` step |
+| [`08_steam_py_code_guide.md`](08_steam_py_code_guide.md) | A guide to read next to `steam.py` |
 
 ## Next Steps
 

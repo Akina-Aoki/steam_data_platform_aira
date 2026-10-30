@@ -36,7 +36,7 @@ For each game, Steam keeps a counter of thumbs up and thumbs down. We ask Steam 
 | API key | None needed |
 | Parameters | One JSON string in `input_json`: `{"appid": <id>, "num_per_page": 1, "language": "all"}` |
 | Keep | Only the `query_summary` block (the totals). The list of single reviews is ignored. |
-| Code | [`REVIEWS_URL`](../src/steam_data_platform/ingestion/steam.py#L25) and [`fetch_review_summary`](../src/steam_data_platform/ingestion/steam.py#L131-L150) |
+| Code | [`REVIEWS_URL`](../src/steam_data_platform/ingestion/steam.py#L33) and [`fetch_review_summary`](../src/steam_data_platform/ingestion/steam.py#L123-L146) |
 
 ## 2. Verified About the API
 
@@ -69,7 +69,7 @@ Checked with real requests on 2026-10-26 (about 6 requests per probe, one game a
 | Key | None needed | There is no review id, because we store totals. It is one row per game per run. |
 | Raw layer | Keep Steam's values as they are | Score 0–9 and the text label stay raw. dbt calculates the percent positive later. |
 | Pipeline | The same pipeline and source as `games` | `steam_source` returns both resources, so one run loads both tables. |
-| Retry code | New shared helper [`get_with_retry`](../src/steam_data_platform/ingestion/steam.py#L85-L128) | The retry logic should exist once. `fetch_app_details` still has its own copy. This is a small clean-up for later. |
+| Retry code | New shared helper [`get_with_retry`](../src/steam_data_platform/ingestion/steam.py#L69-L120) | The retry logic should exist once. `fetch_app_details` used its own copy at first. Since the clean-up of 2026-10-30 it uses `get_with_retry` too. |
 | Pace | One request at a time, 2 s pause | Steam publishes no limit, so we stay slow. |
 | Orchestration | No Airflow for now | About 81 requests per resource per run. Later a scheduled script. |
 
@@ -89,12 +89,12 @@ tests/
 
 | Piece | Function | Code |
 |---|---|---|
-| `get_with_retry(url, params, label)` | One GET with a timeout. Retries timeouts, 5xx and 429 with growing waits. Raises `SteamRateLimitError` on repeated 429 and `SteamRequestError` on other lasting problems. | [steam.py L85-L128](../src/steam_data_platform/ingestion/steam.py#L85-L128) |
-| `SteamRequestError`, `SteamRateLimitError` | Our two error types. The first means "skip this game", the second means "stop the run". | [steam.py L31-L36](../src/steam_data_platform/ingestion/steam.py#L31-L36) |
-| `fetch_review_summary(appid)` | One request per game. Returns the `query_summary` dict, or `None` if the answer has no usable summary (not JSON, no summary, no `total_reviews`). | [steam.py L131-L150](../src/steam_data_platform/ingestion/steam.py#L131-L150) |
-| `build_review_row(appid, summary, collected_at)` | Picks the totals and builds one row. | [steam.py L217-L227](../src/steam_data_platform/ingestion/steam.py#L217-L227) |
-| `review_summary` resource | Loops over the appids, pauses between requests, logs progress every 10 games, yields one row per game. `append`, with `collected_at` typed as a timestamp. | [steam.py L293-L339](../src/steam_data_platform/ingestion/steam.py#L293-L339) |
-| `steam_source` | Groups the resources into one dlt source. | [steam.py L402-L405](../src/steam_data_platform/ingestion/steam.py#L402-L405) |
+| `get_with_retry(url, params, label)` | One GET with a timeout. Retries timeouts, 5xx and 429 with growing waits. Raises `SteamRateLimitError` on repeated 429 and `SteamRequestError` on other lasting problems. | [steam.py L69-L120](../src/steam_data_platform/ingestion/steam.py#L69-L120) |
+| `SteamRequestError`, `SteamRateLimitError` | Our two error types. The first means "skip this game", the second means "stop the run". | [steam.py L39-L47](../src/steam_data_platform/ingestion/steam.py#L39-L47) |
+| `fetch_review_summary(appid)` | One request per game. Returns the `query_summary` dict, or `None` if the answer has no usable summary (not JSON, no summary, no `total_reviews`). | [steam.py L123-L146](../src/steam_data_platform/ingestion/steam.py#L123-L146) |
+| `build_review_row(appid, summary, collected_at)` | Picks the totals and builds one row. | [steam.py L221-L234](../src/steam_data_platform/ingestion/steam.py#L221-L234) |
+| `review_summary` resource | Loops over the appids, pauses between requests, logs progress every 10 games, yields one row per game. `append`, with `collected_at` typed as a timestamp. | [steam.py L308-L354](../src/steam_data_platform/ingestion/steam.py#L308-L354) |
+| `steam_source` | Groups the resources into one dlt source. | [steam.py L419-L422](../src/steam_data_platform/ingestion/steam.py#L419-L422) |
 | `steam_pipeline()` and `run_steam_pipeline()` | `pipeline_name="steam"`, `dataset_name="steam_raw"`, Snowflake destination. | [pipelines_steam.py L19-L30](../src/steam_data_platform/ingestion/pipelines_steam.py#L19-L30) |
 
 **Columns in `REVIEW_SUMMARY`:**
@@ -159,7 +159,7 @@ A second snapshot of 81 rows was added on 2026-10-27, together with the player c
 | `fetch_review_summary`: good answer, zero counts are kept, unusable answers return `None` (5 cases), not JSON | 8 | [test_steam_dlt.py L124-L163](../tests/test_steam_dlt.py#L124-L163) |
 | `build_review_row` | 1 | [test_steam_dlt.py L166-L180](../tests/test_steam_dlt.py#L166-L180) |
 | `review_summary` resource: bad games are skipped, repeated 429 stops the run | 2 | [test_steam_dlt.py L183-L218](../tests/test_steam_dlt.py#L183-L218) |
-| `games`: `success=false` returns `None`, free game has no price | 2 | [test_steam_dlt.py L221-L237](../tests/test_steam_dlt.py#L221-L237) |
+| `games`: `fetch_app_details` (a good game, `success=false`, a `null` answer, a 429 that is retried) and `build_game_row` (a free game has no price). The last 3 `fetch_app_details` tests were added on 2026-10-30. | 5 | [test_steam_dlt.py L221-L266](../tests/test_steam_dlt.py#L221-L266) |
 
 dlt wraps any error raised inside a resource in `ResourceExtractionError`. That is why the rate-limit test checks `error.value.__cause__`.
 
@@ -189,7 +189,7 @@ These are proposals, to confirm when we build the staging models. The full list 
 - **Totals can change in ways we have not seen:** we do not know if a total can go down between two runs. It needs more than one run.
 - **Free Edition:** we do not know why *Knights of Pen and Paper 2: Free Edition* has no reviews.
 - **Minimum number of reviews** for comparisons: 100 is only a proposal.
-- **Retry code:** `fetch_app_details` still has its own copy of the retry logic.
+- **Retry code:** done on 2026-10-30. `fetch_app_details` now uses `get_with_retry`, so the retry logic exists once.
 - **Reviews are a stand-in:** Steam gives no sales numbers. We can show correlation, not causation.
 - **Login:** `DLT_USER` is a `PERSON` account (password and MFA), yet the load worked with a password only, and we do not know why. A scheduled run needs a non-interactive login, for example key-pair authentication.
 - **Undocumented endpoint:** the answer can change without notice.
@@ -205,6 +205,7 @@ These are proposals, to confirm when we build the staging models. The full list 
 | [`notebooks/02_eda_reviews.ipynb`](../notebooks/02_eda_reviews.ipynb) | Validation queries, results and findings |
 | [`05_games__dlt_ingestion.md`](05_games__dlt_ingestion.md) | The `games` step |
 | [`07_player_counts__dlt_ingestion.md`](07_player_counts__dlt_ingestion.md) | The `player_counts` step |
+| [`08_steam_py_code_guide.md`](08_steam_py_code_guide.md) | A guide to read next to `steam.py` |
 
 ## Next Steps
 

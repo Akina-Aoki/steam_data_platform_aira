@@ -4,7 +4,7 @@
 
 Loaded metadata and prices for the **81 games published by Paradox Interactive** from the public Steam Store `appdetails` endpoint into Snowflake `STEAM_DB.STEAM_RAW.GAMES`, using Python and dlt.
 
-This is the first ingestion step. Reviews (`appreviews`) and current players (`GetNumberOfCurrentPlayers`) come next.
+This is the first ingestion step. Reviews are in [doc 06](06_reviews__dlt_ingestion.md) and current players are in [doc 07](07_player_counts__dlt_ingestion.md).
 
 **Branch:** `feat/steam-dlt-ingestion`
 **Status:** Completed and merged into `main` (2026-10-23)
@@ -54,7 +54,7 @@ Checked with real requests on 2026-10-23:
 
 | Topic | Decision | Why |
 |---|---|---|
-| Pipeline | One dlt pipeline, one source, three resources (only `games` exists so far) | Beginner-friendly. We can split later if schedules differ. |
+| Pipeline | One dlt pipeline, one source, three resources (`games`, `review_summary` and `player_counts`) | Beginner-friendly. We can split later if schedules differ. |
 | Write mode | `append` with our own `collected_at` | Every run adds a row per game, so price and discount history builds up. |
 | Prices | Keep Steam's integer minor units plus currency in raw | Raw is a faithful copy. dbt converts. |
 | Lists | `developers`, `publishers`, `genres`, `categories` stored as JSON (`VARIANT`) in one column | Avoids dlt child tables. dbt unpacks later. |
@@ -77,7 +77,7 @@ This follows the structure of the reference project: the source and resources li
 
 | Piece | What it does |
 |---|---|
-| `fetch_app_details(appid)` | One request per game. Returns the `data` dict, or `None` if `success` is false. |
+| `fetch_app_details(appid)` | One request per game, sent through the shared `get_with_retry` (since the clean-up of 2026-10-30). Returns the `data` dict, or `None` if `success` is false. |
 | `build_game_row(data, collected_at)` | Picks the fields we keep and flattens them into one row. Every optional field uses `.get`, because free and unreleased games lack some keys. |
 | `games` resource | Loops over the appids, pauses between requests, yields one row per game. `append`, with explicit column types for `collected_at` and the JSON lists. |
 | `steam_source` | Groups the resources into one dlt source. |
@@ -115,7 +115,7 @@ uv run --env-file .env python -m steam_data_platform.ingestion.pipelines_steam
 | Publisher check | Every game lists Paradox in `publishers`, except *The Kings' Crusade* (42920), whose publisher list is empty on Steam. |
 | Column types | `collected_at` is `TIMESTAMP_LTZ(9)`. List columns are `VARIANT`. Prices, scores and counts are `NUMBER(19,0)`. Booleans are `BOOLEAN`. |
 | Free and unreleased | 2 free games, 4 unreleased games (Steam answered `success = true` for all four, with data but no price). |
-| Missing values | 8 games without a price (2 free, 4 unreleased, 2 not yet explained). 36 of 81 without a Metacritic score. 1 currency (EUR). |
+| Missing values | 8 games without a price (2 free, 4 unreleased, 2 with no known reason: *Majesty 2 Collection* and *Galaxy of Pen & Paper +1*). 36 of 81 without a Metacritic score. 1 currency (EUR). |
 
 dlt also created `_DLT_LOADS`, `_DLT_PIPELINE_STATE` and `_DLT_VERSION`. All tables are owned by `STEAM_LOADER`.
 
@@ -133,13 +133,13 @@ These are proposals, to confirm when we build the staging models.
 
 ## 8. Known Limits and Open Items
 
-- **Not run yet:** sections 2, 8, 9 and 10 of the notebook (one line per game, the 2 games without a price, the `type` check, counts of messy-data cases).
+- **Notebook:** sections 2, 8, 9 and 10 are run now (checked on the snapshot of 2026-10-23). All 81 rows have `type = game`. The 2 games without a price are *Majesty 2 Collection* and *Galaxy of Pen & Paper +1*; the reason is still unknown. Counts of messy-data cases are in section 10 of the notebook.
 - **Names:** only 12 of 81 were compared with my key. The rest rely on the publisher check.
-- **History:** a single snapshot exists, so there is no price or discount history yet.
+- **History:** `GAMES` now has three snapshots of the 81 games (2026-10-23, 10-26 and 10-27). The notebook text describes the first snapshot only.
 - **Repeated runs:** each run adds 81 rows. Proposed rule: one scheduled run per day, and use the latest `collected_at` for current-state questions.
-- **Silent run:** the load log shows nothing for about 3.5 minutes. A progress line is still to be added.
+- **Silent run:** fixed on 2026-10-30. The `games` resource now logs a progress line every 10 games.
 - **Login:** `DLT_USER` is a `PERSON` account (password and MFA), yet the load worked with a password only, and we do not know why. `snowflake_setup/05_create_users.sql` still says `SERVICE`. A scheduled run needs a non-interactive login, for example key-pair authentication.
-- **Tests:** none yet. Planned with mocked HTTP (`monkeypatch`, no network, no Snowflake).
+- **Tests:** [`tests/test_steam_dlt.py`](../tests/test_steam_dlt.py) uses fake Steam answers (`monkeypatch`, no network, no Snowflake). Four tests cover `fetch_app_details`. The `games` progress line has no test, because it is only a log message.
 - **Data quality:** the Store endpoints are undocumented, so the response can change without notice.
 
 ## 9. Related Files
@@ -147,14 +147,15 @@ These are proposals, to confirm when we build the staging models.
 | File | Purpose |
 |---|---|
 | `notebooks/01_eda_games.ipynb` | Validation queries, results and findings |
+| [`08_steam_py_code_guide.md`](08_steam_py_code_guide.md) | A guide to read next to `steam.py` |
 | `scratch/docs/05_steam_api_plan.md` | Original API research |
 | `scratch/docs/06_dlt_ingestion_plan.md` | Ingestion plan and session notes |
 | `scratch/docs/08_agent_prompt_dlt_review.md` | Handoff for the reviews task |
 
 ## Next Steps
 
-1. Run the open notebook sections and record the results.
-2. Add a progress line to the load log.
-3. Probe the `appreviews` endpoint on one game, then design and build the `reviews` resource.
-4. Probe `GetNumberOfCurrentPlayers`, then build `player_counts`.
-5. Tests, a scheduled run with a non-interactive Snowflake login, then dbt sources and staging on their own branches.
+1. ~~Run the open notebook sections and record the results.~~ Done (2026-10-30).
+2. ~~Add a progress line to the load log.~~ Done (2026-10-30).
+3. ~~Probe the reviews endpoint, then build the `review_summary` resource.~~ Done, see [doc 06](06_reviews__dlt_ingestion.md).
+4. ~~Probe `GetNumberOfCurrentPlayers`, then build `player_counts`.~~ Done, see [doc 07](07_player_counts__dlt_ingestion.md).
+5. A scheduled run with a non-interactive Snowflake login, then dbt sources and staging on their own branches.

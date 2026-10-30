@@ -5,7 +5,7 @@
 The dlt loader (`DLT_USER`, role `STEAM_LOADER`) now logs in to Snowflake with a **key pair** instead of a password.
 
 **Branch:** `feat/schedule-run`
-**Status:** Done and tested with a login check (2026-10-30). Not yet tested with a full pipeline run.
+**Status:** Done. Tested with a login check and with a full pipeline run on 2026-10-30 (load id `1793369111.4503539`, 81 rows in each of the three tables).
 
 ```text
 Before:  .env password  ->  dlt  ->  Snowflake
@@ -48,6 +48,7 @@ Now:     private key file (outside the repo)  ->  dlt  ->  Snowflake
 | 5 | `DESC USER DLT_USER` | `HAS_KEYPAIR = true` and a `SHA256:` fingerprint |
 | 6 | Code and `.env` change | `private_key_path` instead of `password` |
 | 7 | A one-off login check (a local script, not in Git) | It printed `('DLT_USER', 'STEAM_LOADER', 'STEAM_WH')` |
+| 8 | A normal full run, the same command as always (section 7) | See section 5: it loaded all three tables with the key. |
 
 **How dlt reads the key.** We checked the installed dlt package. `SnowflakeCredentials` accepts `private_key`, `private_key_path` and `private_key_passphrase`. With `private_key_path`, dlt reads the file as text, decodes it and passes it to the Snowflake connector. The password is then `None`. So the successful login check shows that the **key** worked, not the password.
 
@@ -65,7 +66,7 @@ Now:     private key file (outside the repo)  ->  dlt  ->  Snowflake
 | Item | Detail |
 |---|---|
 | Key file is not encrypted | A scheduled or unattended run then needs no passphrase. The file sits in the user folder. Anyone who can read it can log in as `DLT_USER`. Do not copy it, commit it or send it. |
-| Not tested with a full pipeline run | We did not run the whole pipeline just to test, because `append` adds rows on every run. It builds its credentials from the same function as the login check. The next normal run will be the real proof. |
+| Full pipeline run with the key | **Done on 2026-10-30.** 243 requests, no 429, about 10 minutes (15:05 to 15:15 Stockholm time). Load `1793369111.4503539` has status 0 and 81 rows in `GAMES`, `REVIEW_SUMMARY` and `PLAYER_COUNTS`. Older loads were not changed. We ran it as a normal daily run, not as a separate test, because `append` adds rows on every run. |
 | Notebooks 01 to 03 | They still connect with `SNOWFLAKE_LOADER_PASSWORD`. If Snowflake blocks password-only sign-in, they stop working until their connect cell uses the key. |
 | `DBT_USER` and `STREAMLIT_USER` | They are also `PERSON` users with passwords, so dbt Core and Streamlit may run into the same problem. We decide when we build them. |
 | Dates | The rollout dates come from Snowflake's page and are "subject to change". We do not know the date for our account. |

@@ -135,7 +135,7 @@ These are proposals, to confirm when we build the staging models.
 
 - **Notebook:** sections 2, 8, 9 and 10 are run now (checked on the snapshot of 2026-10-23). All 81 rows have `type = game`. The 2 games without a price are *Majesty 2 Collection* and *Galaxy of Pen & Paper +1*; the reason is still unknown. Counts of messy-data cases are in section 10 of the notebook.
 - **Names:** only 12 of 81 were compared with my key. The rest rely on the publisher check.
-- **History:** `GAMES` now has three snapshots of the 81 games (2026-10-23, 10-26 and 10-27). The notebook text describes the first snapshot only.
+- **History:** `GAMES` now has four snapshots of the 81 games (2026-10-23, 10-26, 10-27 and 10-30). The notebook text describes the first snapshot only.
 - **Repeated runs:** each run adds 81 rows. Proposed rule: one scheduled run per day, and use the latest `collected_at` for current-state questions.
 - **Silent run:** fixed on 2026-10-30. The `games` resource now logs a progress line every 10 games.
 - **Login:** `DLT_USER` is a `PERSON` user with a password and **no MFA** (checked with `DESC USER` on 2026-10-30), which is why a password-only load worked. Snowflake is phasing out password-only sign-in for `PERSON` users, so the loader now logs in with a key pair (see [doc 09](09_key_pair_login.md)). `snowflake_setup/05_create_users.sql` has no `TYPE` line now, so it matches the real user.

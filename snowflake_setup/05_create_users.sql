@@ -4,11 +4,10 @@
 --  CREATE DLT_USER
 -- ***********************************************
 
--- Create the service user for dlt ingestion
+-- Create the user for dlt ingestion
 USE ROLE USERADMIN;
 
 CREATE USER IF NOT EXISTS DLT_USER
-    TYPE = SERVICE
     DEFAULT_ROLE = STEAM_LOADER
     DEFAULT_WAREHOUSE = STEAM_WH
     DEFAULT_NAMESPACE = 'STEAM_DB.STEAM_RAW'

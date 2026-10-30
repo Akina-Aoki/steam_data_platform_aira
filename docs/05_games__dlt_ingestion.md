@@ -138,7 +138,7 @@ These are proposals, to confirm when we build the staging models.
 - **History:** `GAMES` now has three snapshots of the 81 games (2026-10-23, 10-26 and 10-27). The notebook text describes the first snapshot only.
 - **Repeated runs:** each run adds 81 rows. Proposed rule: one scheduled run per day, and use the latest `collected_at` for current-state questions.
 - **Silent run:** fixed on 2026-10-30. The `games` resource now logs a progress line every 10 games.
-- **Login:** `DLT_USER` is a `PERSON` account (password and MFA), yet the load worked with a password only, and we do not know why. `snowflake_setup/05_create_users.sql` still says `SERVICE`. A scheduled run needs a non-interactive login, for example key-pair authentication.
+- **Login:** `DLT_USER` is a `PERSON` user with a password and **no MFA** (checked with `DESC USER` on 2026-10-30), which is why a password-only load worked. Snowflake is phasing out password-only sign-in for `PERSON` users, so the loader now logs in with a key pair (see [doc 09](09_key_pair_login.md)). `snowflake_setup/05_create_users.sql` has no `TYPE` line now, so it matches the real user.
 - **Tests:** [`tests/test_steam_dlt.py`](../tests/test_steam_dlt.py) uses fake Steam answers (`monkeypatch`, no network, no Snowflake). Four tests cover `fetch_app_details`. The `games` progress line has no test, because it is only a log message.
 - **Data quality:** the Store endpoints are undocumented, so the response can change without notice.
 

@@ -22,7 +22,7 @@ Snowflake setup scripts are in `snowflake_setup/`, including `05_create_users.sq
 - Tested each user with Python and the Snowflake connector.
 - Verified the expected user, role, warehouse, database, and schema for all three connections.
 
-> **Follow-up:** Align `05_create_users.sql` with the actual `DLT_USER` account type (`PERSON` was used for the successful local password/MFA connection; the committed script still specifies `SERVICE`).
+> **Follow-up (done on 2026-10-30):** `DLT_USER` is a `PERSON` user with a password and no MFA (checked with `DESC USER`). `05_create_users.sql` now has no `TYPE` line, like the reference project, so Snowflake uses its default (`PERSON`) and the file matches the real user. Since 2026-10-30 the loader logs in with a key pair, see [doc 09](09_key_pair_login.md).
 
 ## 3. dbt Core Setup
 

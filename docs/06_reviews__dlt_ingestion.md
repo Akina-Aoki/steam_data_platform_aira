@@ -191,7 +191,7 @@ These are proposals, to confirm when we build the staging models. The full list 
 - **Minimum number of reviews** for comparisons: 100 is only a proposal.
 - **Retry code:** done on 2026-10-30. `fetch_app_details` now uses `get_with_retry`, so the retry logic exists once.
 - **Reviews are a stand-in:** Steam gives no sales numbers. We can show correlation, not causation.
-- **Login:** `DLT_USER` is a `PERSON` account (password and MFA), yet the load worked with a password only, and we do not know why. A scheduled run needs a non-interactive login, for example key-pair authentication.
+- **Login:** `DLT_USER` is a `PERSON` user with a password and **no MFA** (checked with `DESC USER` on 2026-10-30), which is why a password-only load worked. Snowflake is phasing out password-only sign-in for `PERSON` users, so the loader now logs in with a key pair (see [doc 09](09_key_pair_login.md)).
 - **Undocumented endpoint:** the answer can change without notice.
 
 ## 10. Related Files

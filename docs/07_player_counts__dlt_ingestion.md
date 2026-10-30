@@ -221,7 +221,7 @@ These are proposals, to confirm when we build the staging models. The full table
 - **Why *Knights of Pen and Paper 2: Free Edition* has 0 players and no reviews:** unknown.
 - **History:** a single snapshot of player counts exists. Each run adds 81 rows.
 - **Repeated runs:** proposed rule is one scheduled run per day, and the latest row per game for current-state questions. Not decided.
-- **Login:** `DLT_USER` is a `PERSON` account (password and MFA), yet the load worked with a password only, and we do not know why. A scheduled run needs a non-interactive login, for example key-pair authentication.
+- **Login:** `DLT_USER` is a `PERSON` user with a password and **no MFA** (checked with `DESC USER` on 2026-10-30), which is why a password-only load worked. Snowflake is phasing out password-only sign-in for `PERSON` users, so the loader now logs in with a key pair (see [doc 09](09_key_pair_login.md)).
 - **Small clean-ups:** done on 2026-10-30. `fetch_app_details` now uses `get_with_retry`, and the `games` resource logs a progress line every 10 games.
 - **Undocumented endpoint:** the answer can change without notice.
 

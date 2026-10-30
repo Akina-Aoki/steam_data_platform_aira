@@ -227,6 +227,35 @@ def test_fetch_app_details_returns_none_when_success_is_false(patch_get, sleeps)
     assert steam.fetch_app_details(99999999) is None
 
 
+def test_fetch_app_details_returns_the_data(patch_get, sleeps):
+    data = {"steam_appid": 281990, "name": "Stellaris"}
+    patch_get([FakeResponse(200, {"281990": {"success": True, "data": data}})])
+
+    assert steam.fetch_app_details(281990) == data
+
+
+def test_fetch_app_details_returns_none_when_the_body_is_null(patch_get, sleeps):
+    """Steam can answer with `null` instead of an object; that must not crash."""
+    patch_get([FakeResponse(200, None)])
+
+    assert steam.fetch_app_details(1) is None
+
+
+def test_fetch_app_details_retries_through_get_with_retry(patch_get, sleeps):
+    """A 429 is retried (with the shared wait), then the good answer is used."""
+    data = {"steam_appid": 281990}
+    calls = patch_get(
+        [
+            FakeResponse(429),
+            FakeResponse(200, {"281990": {"success": True, "data": data}}),
+        ]
+    )
+
+    assert steam.fetch_app_details(281990) == data
+    assert len(calls) == 2
+    assert sleeps == [steam.BACKOFF_SECONDS]
+
+
 def test_build_game_row_free_game_has_no_price():
     data = {"steam_appid": 1, "name": "Free Game", "is_free": True}
 

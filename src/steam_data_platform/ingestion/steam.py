@@ -25,7 +25,7 @@ from steam_data_platform.settings import (
 
 logger = logging.getLogger(__name__)
 
-# The three Steam endpoints: game details, review totals, players right now.
+# The Steam endpoints: game details, reviews (totals and recent), players, achievements.
 APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
 REQUEST_TIMEOUT_SECONDS = 10  # give up on one request after 10 seconds
 MAX_ATTEMPTS = 3  # try each request at most 3 times
@@ -35,10 +35,7 @@ REVIEWS_URL = "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1
 PLAYERS_URL = (
     "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/"
 )
-ACHIEVEMENTS_URL = (
-    "https://api.steampowered.com/ISteamUserStats/"
-    "GetGlobalAchievementPercentagesForApp/v2/"
-)
+ACHIEVEMENTS_URL = "https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/"
 # Recent reviews: how many days to look back. Steam's review_type is a number.
 # We tested it on Stellaris for all time: type 1 gave 119,757 and type 2 gave
 # 19,965, which are the all-time positive and negative totals.

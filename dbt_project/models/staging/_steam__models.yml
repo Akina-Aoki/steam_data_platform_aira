@@ -1,0 +1,184 @@
+# This file documents the staging models and tells dbt which data quality checks to run.
+# Comments starting with # are for people reading this file; dbt ignores them.
+version: 2
+
+# Each item under models describes one dbt model (a table or view).
+models:
+  - name: stg_steam__games
+    # This description appears in dbt documentation.
+    description: >
+      One row per game per collection run, cleaned from steam_raw.games.
+      Prices are in euros, times are in UTC, the Portal 2 test row is removed.
+
+    # Table-level checks can compare multiple columns or rows.
+    # dbt runs these checks when you run the model's tests; they do not change the data.
+    data_tests:
+      # The combination of game id and load id must be unique.
+      # This allows the same game to appear in different collection runs.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - steam_appid
+              - load_id
+
+      # Check that the discounted price is not higher than the original price.
+      # "warn" reports a problem without failing the test command.
+      # "where" skips rows where either price is NULL (missing).
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "price_final <= price_initial"
+          config:
+            severity: warn
+            where: "price_initial is not null and price_final is not null"
+
+    # Each entry here documents and can test one column.
+    columns:
+      - name: steam_appid
+        description: Steam id of the game.
+        data_tests:
+          - not_null          # Fail if any row is missing a game id.
+
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null          # Fail if any row is missing its collection run id.
+
+      - name: collected_at_utc
+        description: When the row was collected, in UTC.
+        data_tests:
+          - not_null          # Fail if any row is missing its collection time.
+
+      - name: type
+        description: Steam app type.
+        data_tests:
+          # Only "game" is expected. Other values (such as "dlc") produce a warning.
+          - accepted_values:
+              arguments:
+                values:
+                  - game
+              config:
+                severity: warn
+
+      # These three have a description only, no test.
+      - name: price_initial
+        description: Price before discount in euros. NULL when Steam sends no price.
+      - name: price_final
+        description: Price after discount in euros. NULL when Steam sends no price.
+      - name: release_date
+        description: Release date as a date. NULL for unreleased games.
+
+  - name: stg_steam__review_summary
+    # This description appears in dbt documentation.
+    description: >
+      One row per game per collection run, cleaned from steam_raw.review_summary.
+      Totals only (all-time counts), not single reviews.
+
+    # Table-level checks can compare multiple columns or rows.
+    data_tests:
+      # The combination of game id and load id must be unique.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - steam_appid
+              - load_id
+
+      # Positive and negative review counts must add up to the total review count.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "total_positive + total_negative = total_reviews"
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game.
+        data_tests:
+          - not_null
+          # Every game in this model must also exist in the games staging model.
+          # "field" is the column to match; "to" names the model to look it up in.
+          - relationships:
+              arguments:
+                to: ref('stg_steam__games')
+                field: steam_appid
+
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: collected_at_utc
+        description: When the row was collected, in UTC.
+        data_tests:
+          - not_null
+
+      - name: review_score_desc
+        description: Steam's label for the score. Free text, so it has no fixed-list test.
+
+      - name: pct_positive
+        description: Percent of positive reviews, one decimal. NULL when the game has no reviews.
+
+      - name: has_reviews
+        description: True when the game has at least one review.
+
+  - name: stg_steam__player_counts
+    description: >
+      One row per game per collection run, cleaned from steam_raw.player_counts.
+      A player count is one moment, so it depends on the time of day.
+
+    # Tests on the whole table
+    data_tests:
+      # A game must appear only once per run
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - steam_appid
+              - load_id
+
+      # A count must come with result 1, and no data with result 42.
+      # "warn" = dbt shows a warning but the build does not fail.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "(result = 1 and player_count is not null) or (result = 42 and player_count is null)"
+          config:
+            severity: warn
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game.
+        data_tests:
+          - not_null
+          # Every game here must also exist in the games staging model
+          - relationships:
+              arguments:
+                to: ref('stg_steam__games')
+                field: steam_appid
+
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: collected_at_utc
+        description: When the row was collected, in UTC. Differs for every row.
+        data_tests:
+          - not_null
+
+      - name: collected_hour_local
+        description: Hour of the day in Stockholm time, to compare runs at the same time of day.
+
+      - name: player_count
+        description: Players in the game at that moment. NULL means Steam has no data, 0 is a real zero.
+
+      - name: result
+        description: Steam's result code. 1 means a count, 42 means no data.
+        data_tests:
+          - not_null
+          # We have only seen 1 and 42. A new code gives a warning.
+          - accepted_values:
+              arguments:
+                values:
+                  - 1
+                  - 42
+              config:
+                severity: warn
+
+      - name: has_player_data
+        description: True when Steam sent a count (result = 1).

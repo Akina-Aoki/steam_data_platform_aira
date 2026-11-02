@@ -11,6 +11,8 @@ dbt now reads the three raw tables in `STEAM_DB.STEAM_RAW` and cleans them into 
 
 Only the staging step is done. Intermediate and marts do not exist yet.
 
+**Update 2026-11-02:** two more raw tables now exist in `STEAM_RAW`: `REVIEW_RECENT` ([doc 11](11_review_recent__dlt_ingestion.md)) and `ACHIEVEMENTS` ([doc 12](12_achievements__dlt_ingestion.md)). They are **not** in the sources file and have no staging models yet. That is the next step on this branch. Also, `REVIEW_SUMMARY` counted English reviews only before 2026-11-02 (see [doc 06](06_reviews__dlt_ingestion.md)), which `stg_steam__review_summary` does not mark yet. The rest of this doc describes the three tables and the 23 tests as they were.
+
 ## 1. Sources
 
 File: [`_steam__sources.yml`](../dbt_project/models/staging/_steam__sources.yml)
@@ -130,7 +132,9 @@ This was tested with `dbt debug` on 2026-11-02 in Git Bash (`All checks passed!`
 
 | Item | Status |
 |---|---|
-| Intermediate layer (latest row per game, unpacking lists, joins on the date) | Next PR |
+| Sources and staging for `review_recent` and `achievements` | Next. Proposals are in notebooks 04 and 05, section 10. |
+| A flag for the English-only loads of `review_summary` (for example `counts_all_languages`) | Next. Needs a decision on how to set the date. |
+| Intermediate layer (latest row per game, unpacking lists, joins on the date) | After that. The first intermediate branch was paused. |
 | Marts and Streamlit | Later |
 | What `result = 42` means exactly | Unverified. We only say "Steam has no data". |
 | Rule for repeated runs on the same day | Open. Joining on date only works with one run per day. |

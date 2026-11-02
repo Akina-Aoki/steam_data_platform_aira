@@ -4,7 +4,7 @@
 
 Loaded metadata and prices for the **81 games published by Paradox Interactive** from the public Steam Store `appdetails` endpoint into Snowflake `STEAM_DB.STEAM_RAW.GAMES`, using Python and dlt.
 
-This is the first ingestion step. Reviews are in [doc 06](06_reviews__dlt_ingestion.md) and current players are in [doc 07](07_player_counts__dlt_ingestion.md).
+This is the first ingestion step. Reviews are in [doc 06](06_reviews__dlt_ingestion.md), current players are in [doc 07](07_player_counts__dlt_ingestion.md), recent reviews are in [doc 11](11_review_recent__dlt_ingestion.md) and achievements are in [doc 12](12_achievements__dlt_ingestion.md).
 
 **Branch:** `feat/steam-dlt-ingestion`
 **Status:** Completed and merged into `main` (2026-10-23)
@@ -54,7 +54,7 @@ Checked with real requests on 2026-10-23:
 
 | Topic | Decision | Why |
 |---|---|---|
-| Pipeline | One dlt pipeline, one source, three resources (`games`, `review_summary` and `player_counts`) | Beginner-friendly. We can split later if schedules differ. |
+| Pipeline | One dlt pipeline, one source, three resources at first (`games`, `review_summary` and `player_counts`). `review_recent` and `achievements` were added on 2026-11-02, so it is now five. | Beginner-friendly. We can split later if schedules differ. |
 | Write mode | `append` with our own `collected_at` | Every run adds a row per game, so price and discount history builds up. |
 | Prices | Keep Steam's integer minor units plus currency in raw | Raw is a faithful copy. dbt converts. |
 | Lists | `developers`, `publishers`, `genres`, `categories` stored as JSON (`VARIANT`) in one column | Avoids dlt child tables. dbt unpacks later. |

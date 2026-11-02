@@ -1,5 +1,6 @@
 """Tests for the Steam ingestion. No real network and no Snowflake."""
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -161,6 +162,21 @@ def test_fetch_review_summary_returns_none_when_not_json(patch_get, sleeps):
     patch_get([FakeResponse(200, json_error=True)])
 
     assert steam.fetch_review_summary(1) is None
+
+
+def test_fetch_review_summary_asks_for_all_languages(monkeypatch, sleeps):
+    """Steam ignores "language". It must be "languages", as a list."""
+    asked: list[dict] = []
+
+    def fake_get(url, params=None, timeout=None):
+        asked.append(json.loads(params["input_json"]))
+        return FakeResponse(200, {"response": {"query_summary": GOOD_SUMMARY}})
+
+    monkeypatch.setattr(steam.requests, "get", fake_get)
+
+    steam.fetch_review_summary(281990)
+
+    assert asked == [{"appid": 281990, "num_per_page": 1, "languages": ["all"]}]
 
 
 # --- build_review_row -----------------------------------------------------
@@ -403,3 +419,287 @@ def test_player_counts_stops_the_run_on_rate_limit(monkeypatch, sleeps):
         list(steam.player_counts([1, 2, 3]))
     assert isinstance(error.value.__cause__, steam.SteamRateLimitError)
     assert asked == [1, 2]  # game 3 was never requested
+
+
+# --- fetch_recent_review_count --------------------------------------------
+
+
+def test_fetch_recent_review_count_returns_total_matching(patch_get, sleeps):
+    patch_get([FakeResponse(200, {"response": {"total_matching": 363}})])
+
+    assert steam.fetch_recent_review_count(281990, steam.REVIEW_TYPE_POSITIVE) == 363
+
+
+def test_fetch_recent_review_count_asks_the_right_question(monkeypatch, sleeps):
+    """The question must name the days, all languages and the review type."""
+    asked: list[dict] = []
+
+    def fake_get(url, params=None, timeout=None):
+        asked.append(json.loads(params["input_json"]))
+        return FakeResponse(200, {"response": {"total_matching": 5}})
+
+    monkeypatch.setattr(steam.requests, "get", fake_get)
+
+    steam.fetch_recent_review_count(281990, steam.REVIEW_TYPE_NEGATIVE)
+
+    assert asked == [
+        {
+            "appid": 281990,
+            "num_per_page": 1,
+            "day_range": 30,
+            "languages": ["all"],
+            "review_type": 2,
+        }
+    ]
+
+
+def test_fetch_recent_review_count_keeps_zero_as_zero(patch_get, sleeps):
+    """No recent reviews is a real 0. It must not turn into None."""
+    patch_get([FakeResponse(200, {"response": {"total_matching": 0}})])
+
+    count = steam.fetch_recent_review_count(1, steam.REVIEW_TYPE_POSITIVE)
+
+    assert count == 0
+    assert count is not None
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        [],
+        None,
+        {"response": []},
+        {"response": {}},  # no total_matching
+        {"response": {"total_matching": "12"}},  # a text, not a number
+        {"response": {"total_matching": True}},  # True is not a count
+    ],
+)
+def test_fetch_recent_review_count_returns_none_for_unusable_answers(
+    patch_get, sleeps, body
+):
+    patch_get([FakeResponse(200, body)])
+
+    assert steam.fetch_recent_review_count(1, steam.REVIEW_TYPE_POSITIVE) is None
+
+
+def test_fetch_recent_review_count_returns_none_when_not_json(patch_get, sleeps):
+    patch_get([FakeResponse(200, json_error=True)])
+
+    assert steam.fetch_recent_review_count(1, steam.REVIEW_TYPE_POSITIVE) is None
+
+
+# --- build_review_recent_row ----------------------------------------------
+
+
+def test_build_review_recent_row_keeps_the_counts():
+    row = steam.build_review_recent_row(281990, 363, 195, COLLECTED_AT)
+
+    assert row == {
+        "steam_appid": 281990,
+        "collected_at": COLLECTED_AT,
+        "day_range": 30,
+        "recent_positive": 363,
+        "recent_negative": 195,
+    }
+
+
+# --- review_recent resource -----------------------------------------------
+
+
+def test_review_recent_skips_bad_games_and_keeps_zero(monkeypatch, sleeps):
+    asked: list[tuple[int, int]] = []
+
+    def fake_fetch(appid, review_type):
+        asked.append((appid, review_type))
+        if appid == 2:
+            return None  # the positive count is not usable
+        if appid == 3:
+            raise steam.SteamRequestError("boom")  # failed after retries
+        if appid == 4 and review_type == steam.REVIEW_TYPE_NEGATIVE:
+            return None  # only the negative count is not usable
+        if appid == 5:
+            return 0  # a real zero
+        return 10 if review_type == steam.REVIEW_TYPE_POSITIVE else 4
+
+    monkeypatch.setattr(steam, "fetch_recent_review_count", fake_fetch)
+
+    rows = list(steam.review_recent([1, 2, 3, 4, 5]))
+
+    # Games 2, 3 and 4 are left out, so we never store half a pair.
+    assert [row["steam_appid"] for row in rows] == [1, 5]
+    assert (rows[0]["recent_positive"], rows[0]["recent_negative"]) == (10, 4)
+    assert (rows[1]["recent_positive"], rows[1]["recent_negative"]) == (0, 0)
+    # Every row of one run shares the same collected_at.
+    assert len({row["collected_at"] for row in rows}) == 1
+    # Game 2 had no usable positive count, so we did not ask the second question.
+    assert (2, steam.REVIEW_TYPE_NEGATIVE) not in asked
+
+
+def test_review_recent_stops_the_run_on_rate_limit(monkeypatch, sleeps):
+    asked: list[int] = []
+
+    def fake_fetch(appid, review_type):
+        asked.append(appid)
+        if appid == 2:
+            raise steam.SteamRateLimitError("429")
+        return 10
+
+    monkeypatch.setattr(steam, "fetch_recent_review_count", fake_fetch)
+
+    with pytest.raises(ResourceExtractionError) as error:
+        list(steam.review_recent([1, 2, 3]))
+    assert isinstance(error.value.__cause__, steam.SteamRateLimitError)
+    assert 3 not in asked  # game 3 was never requested
+
+
+# --- fetch_achievements ---------------------------------------------------
+
+GOOD_ACHIEVEMENTS = [
+    {"name": "achievement_economy_1", "percent": "40.9"},
+    {"name": "achievement_colonize", "percent": "36.5"},
+]
+
+
+def test_fetch_achievements_returns_the_list(patch_get, sleeps):
+    body = {"achievementpercentages": {"achievements": GOOD_ACHIEVEMENTS}}
+    patch_get([FakeResponse(200, body)])
+
+    assert steam.fetch_achievements(281990) == GOOD_ACHIEVEMENTS
+
+
+def test_fetch_achievements_403_with_empty_body_is_no_data(patch_get, sleeps):
+    """Unreleased games and wrong ids give 403 and {}. That is an answer."""
+    calls = patch_get([FakeResponse(403, {})])
+
+    assert steam.fetch_achievements(1257610) == []
+    assert len(calls) == 1  # a 403 is an answer, not something to retry
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        FakeResponse(403, {"error": "blocked"}),  # not empty
+        FakeResponse(403, json_error=True),  # not JSON
+    ],
+)
+def test_fetch_achievements_other_403_is_an_error(patch_get, sleeps, response):
+    patch_get([response])
+
+    with pytest.raises(requests.HTTPError):
+        steam.fetch_achievements(1)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        [],
+        None,
+        {"achievementpercentages": []},
+        {"achievementpercentages": {}},  # no achievements key
+        {"achievementpercentages": {"achievements": "none"}},  # not a list
+    ],
+)
+def test_fetch_achievements_returns_none_for_unusable_answers(patch_get, sleeps, body):
+    patch_get([FakeResponse(200, body)])
+
+    assert steam.fetch_achievements(1) is None
+
+
+def test_fetch_achievements_returns_none_when_not_json(patch_get, sleeps):
+    patch_get([FakeResponse(200, json_error=True)])
+
+    assert steam.fetch_achievements(1) is None
+
+
+# --- build_achievement_rows -----------------------------------------------
+
+
+def test_build_achievement_rows_keeps_the_percent_as_text():
+    rows = steam.build_achievement_rows(281990, GOOD_ACHIEVEMENTS, COLLECTED_AT)
+
+    assert len(rows) == 2
+    assert rows[0] == {
+        "steam_appid": 281990,
+        "collected_at": COLLECTED_AT,
+        "achievement_name": "achievement_economy_1",
+        "percent": "40.9",
+    }
+
+
+def test_build_achievement_rows_turns_a_number_into_text():
+    """If Steam ever sends a number, the column must still hold text."""
+    rows = steam.build_achievement_rows(
+        1, [{"name": "a", "percent": 12.5}], COLLECTED_AT
+    )
+
+    assert rows[0]["percent"] == "12.5"
+
+
+def test_build_achievement_rows_leaves_out_bad_entries():
+    items = [
+        {"name": "good", "percent": "1.0"},
+        {"percent": "2.0"},  # no name
+        {"name": "no_percent"},  # no percent
+        {"name": "", "percent": "3.0"},  # empty name
+        "junk",  # not an object
+    ]
+
+    rows = steam.build_achievement_rows(1, items, COLLECTED_AT)
+
+    assert [row["achievement_name"] for row in rows] == ["good"]
+
+
+# --- achievements resource ------------------------------------------------
+
+
+def test_achievements_gives_rows_and_skips_no_data_and_bad_games(monkeypatch, sleeps):
+    def fake_fetch(appid):
+        if appid == 2:
+            return []  # Steam has no data for this game
+        if appid == 3:
+            return None  # unusable answer
+        if appid == 4:
+            raise steam.SteamRequestError("boom")  # failed after retries
+        return GOOD_ACHIEVEMENTS
+
+    monkeypatch.setattr(steam, "fetch_achievements", fake_fetch)
+
+    rows = list(steam.achievements([1, 2, 3, 4]))
+
+    # Only game 1 gives rows. Game 2 gets no rows at all, not a 0 percent row.
+    assert [row["steam_appid"] for row in rows] == [1, 1]
+    assert len({row["collected_at"] for row in rows}) == 1
+
+
+def test_achievements_stops_the_run_on_rate_limit(monkeypatch, sleeps):
+    asked: list[int] = []
+
+    def fake_fetch(appid):
+        asked.append(appid)
+        if appid == 2:
+            raise steam.SteamRateLimitError("429")
+        return GOOD_ACHIEVEMENTS
+
+    monkeypatch.setattr(steam, "fetch_achievements", fake_fetch)
+
+    with pytest.raises(ResourceExtractionError) as error:
+        list(steam.achievements([1, 2, 3]))
+    assert isinstance(error.value.__cause__, steam.SteamRateLimitError)
+    assert asked == [1, 2]  # game 3 was never requested
+
+
+# --- steam_source ---------------------------------------------------------
+
+
+def test_steam_source_has_the_five_resources():
+    source = steam.steam_source([1])
+
+    assert sorted(source.resources.keys()) == [
+        "achievements",
+        "games",
+        "player_counts",
+        "review_recent",
+        "review_summary",
+    ]

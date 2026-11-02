@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: steam
+    schema: steam_raw  # dlt's dataset_name
+    description: >
+      Raw Steam data for the 81 Paradox Interactive games, loaded by dlt.
+      One row per game per run. Nothing in here is cleaned.
+    tables:
+      - name: games
+        description: Store appdetails, one row per game per run.
+      - name: review_summary
+        description: Review totals (thumbs up and down), one row per game per run.
+      - name: player_counts
+        description: Players right now, one row per game per run. A NULL count means Steam had no data.

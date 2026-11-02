@@ -10,7 +10,6 @@ steam_data_platform:
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
       user: "{{ env_var('SNOWFLAKE_TRANSFORMER_USER') }}"
       password: "{{ env_var('SNOWFLAKE_TRANSFORMER_PASSWORD') }}"
-      authenticator: username_password_mfa
 
       # Snowflake infrastructure
       role: "{{ env_var('SNOWFLAKE_TRANSFORMER_ROLE') }}"

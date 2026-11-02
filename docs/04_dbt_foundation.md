@@ -51,7 +51,7 @@ Dependencies were successfully installed using `dbt deps`.
 
 Three unused configuration warnings are expected because no SQL models exist yet.
 
-Schema naming has been parsed but not yet verified through model execution.
+Schema naming was only parsed at this point. It was checked later through model execution, see [doc 10](10_dbt_sources_staging.md).
 
 ## Current Architecture
 

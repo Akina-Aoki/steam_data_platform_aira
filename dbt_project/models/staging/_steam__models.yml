@@ -117,6 +117,9 @@ models:
 
       - name: has_reviews
         description: True when the game has at least one review.
+      
+      - name: counts_all_languages
+        description: False for rows before 2026-11-02, when the totals counted English reviews only. True from that day, when they count all languages.
 
   - name: stg_steam__player_counts
     description: >
@@ -182,3 +185,125 @@ models:
 
       - name: has_player_data
         description: True when Steam sent a count (result = 1).
+
+  - name: stg_steam__review_recent
+    description: >
+      One row per game per collection run, cleaned from steam_raw.review_recent.
+      Reviews from the last 30 days only (all languages), not all-time totals.
+
+    # Tests on the whole table
+    data_tests:
+      # A game must appear only once per run
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - steam_appid
+              - load_id
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game.
+        data_tests:
+          - not_null
+          # Every game here must also exist in the games staging model
+          - relationships:
+              arguments:
+                to: ref('stg_steam__games')
+                field: steam_appid
+
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: collected_at_utc
+        description: When the row was collected, in UTC.
+        data_tests:
+          - not_null
+
+      - name: day_range
+        description: Length of the review window in days. We have only seen 30.
+        data_tests:
+          - not_null
+          # A different window would make rows hard to compare, so a new value gives a warning.
+          - accepted_values:
+              arguments:
+                values:
+                  - 30
+              config:
+                severity: warn
+
+      - name: recent_positive
+        description: Positive reviews in the window. A real 0 stays 0.
+        data_tests:
+          - not_null
+
+      - name: recent_negative
+        description: Negative reviews in the window. A real 0 stays 0.
+        data_tests:
+          - not_null
+
+      - name: recent_total
+        description: Positive plus negative reviews in the window. Raw does not store it.
+
+      - name: has_recent_reviews
+        description: True when the game has at least one review in the window.
+
+      - name: pct_positive_recent
+        description: Percent of positive reviews in the window, one decimal. NULL when the game has no recent reviews.
+
+  - name: stg_steam__achievements
+    description: >
+      One row per game, achievement and collection run, cleaned from steam_raw.achievements.
+      Games without achievements have no rows. That means no data, not 0 %.
+
+    # Tests on the whole table
+    data_tests:
+      # The same achievement name is used by more than one game (41 names),
+      # so the name alone is not unique. We need game + name + run.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - steam_appid
+              - achievement_name
+              - load_id
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game.
+        data_tests:
+          - not_null
+          # Every game here must also exist in the games staging model
+          - relationships:
+              arguments:
+                to: ref('stg_steam__games')
+                field: steam_appid
+
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: collected_at_utc
+        description: When the row was collected, in UTC.
+        data_tests:
+          - not_null
+
+      - name: achievement_name
+        description: Steam's code for the achievement, kept as it is. Not a readable title.
+        data_tests:
+          - not_null
+
+      - name: percent
+        description: Share of players who unlocked it, as text exactly like Steam sent it.
+
+      - name: percent_unlocked
+        description: The same share as a number. NULL if the text is not a number.
+        data_tests:
+          # NULL here would mean the text could not be turned into a number.
+          - not_null
+          # A share of players must be between 0 and 100.
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100

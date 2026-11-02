@@ -30,7 +30,13 @@ renamed_staging as (
         round(100 * total_positive / nullif(total_reviews, 0), 1) as pct_positive,
 
         -- Zero reviews does not mean the game is unreleased
-        total_reviews > 0 as has_reviews
+        total_reviews > 0 as has_reviews,
+
+        -- Before 2026-11-02 Steam counted English reviews only (our request had the wrong option).
+        -- From that day it counts all languages. Do not compare totals across this date.
+        (collected_date >= '2026-11-02'::date) as counts_all_languages
+
+
 
     from source
 

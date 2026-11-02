@@ -4,7 +4,7 @@
 
 Loaded the **number of players right now** for the same 81 Paradox Interactive games from the public Steam `ISteamUserStats/GetNumberOfCurrentPlayers` endpoint into Snowflake `STEAM_DB.STEAM_RAW.PLAYER_COUNTS`, using Python and dlt.
 
-This is the third ingestion step. With it, the extract and load part (dlt) is done for all three sources.
+This is the third ingestion step. With it, the extract and load part (dlt) was done for the first three sources. On 2026-11-02 two more resources were added: `review_recent` ([doc 11](11_review_recent__dlt_ingestion.md)) and `achievements` ([doc 12](12_achievements__dlt_ingestion.md)). So the pipeline now has five resources, and one run is about 486 requests and takes about 21 minutes. The numbers below (243 requests, three resources) describe the state when this doc was written.
 
 **Branch:** `feat/steam-player-counts-ingestion`
 **Status:** Completed and merged into `main` (2026-10-27, pull request #7)
@@ -27,7 +27,7 @@ Steam can tell us how many people are playing a game at this moment. That number
 
 ## 1. The Whole Ingestion at a Glance
 
-One pipeline, one source, three resources. One run loads all three tables, one request at a time.
+One pipeline, one source, five resources (three when this doc was written). One run loads all five tables, one request at a time.
 
 ```text
 Steam endpoint                          dlt resource        Snowflake table (STEAM_RAW)
@@ -36,21 +36,26 @@ Store appdetails                    ->  games            -> GAMES
 IUserReviewsService/GetAppReviews   ->  review_summary   -> REVIEW_SUMMARY
 ISteamUserStats/                    ->  player_counts    -> PLAYER_COUNTS
   GetNumberOfCurrentPlayers
+IUserReviewsService/GetAppReviews   ->  review_recent    -> REVIEW_RECENT   (added 2026-11-02)
+ISteamUserStats/                    ->  achievements     -> ACHIEVEMENTS    (added 2026-11-02)
+  GetGlobalAchievementPercentagesForApp
 ```
 
 | Step | Resource | Rows per run | Document | Code | Notebook |
 |---|---|---|---|---|---|
-| 1 | `games` | 81 | [05](05_games__dlt_ingestion.md) | [steam.py L247-L305](../src/steam_data_platform/ingestion/steam.py#L247-L305) | [01_eda_games](../notebooks/01_eda_games.ipynb) |
-| 2 | `review_summary` | 81 | [06](06_reviews__dlt_ingestion.md) | [steam.py L308-L354](../src/steam_data_platform/ingestion/steam.py#L308-L354) | [02_eda_reviews](../notebooks/02_eda_reviews.ipynb) |
-| 3 | `player_counts` | 81 | this document | [steam.py L357-L416](../src/steam_data_platform/ingestion/steam.py#L357-L416) | [03_eda_player_counts](../notebooks/03_eda_player_counts.ipynb) |
+| 1 | `games` | 81 | [05](05_games__dlt_ingestion.md) | [steam.py L367-L425](../src/steam_data_platform/ingestion/steam.py#L367-L425) | [01_eda_games](../notebooks/01_eda_games.ipynb) |
+| 2 | `review_summary` | 81 | [06](06_reviews__dlt_ingestion.md) | [steam.py L428-L474](../src/steam_data_platform/ingestion/steam.py#L428-L474) | [02_eda_reviews](../notebooks/02_eda_reviews.ipynb) |
+| 3 | `player_counts` | 81 | this document | [steam.py L477-L536](../src/steam_data_platform/ingestion/steam.py#L477-L536) | [03_eda_player_counts](../notebooks/03_eda_player_counts.ipynb) |
+| 4 | `review_recent` | 81 | [11](11_review_recent__dlt_ingestion.md) | [steam.py L539-L590](../src/steam_data_platform/ingestion/steam.py#L539-L590) | [04_eda_review_recent](../notebooks/04_eda_review_recent.ipynb) |
+| 5 | `achievements` | about 4,000 (3,966 on 2026-11-02) | [12](12_achievements__dlt_ingestion.md) | [steam.py L593-L659](../src/steam_data_platform/ingestion/steam.py#L593-L659) | [05_eda_achievements](../notebooks/05_eda_achievements.ipynb) |
 
 | Shared piece | Function | Code |
 |---|---|---|
-| `steam_source` | Groups the three resources into one dlt source | [steam.py L419-L422](../src/steam_data_platform/ingestion/steam.py#L419-L422) |
+| `steam_source` | Groups the resources into one dlt source (five since 2026-11-02) | [steam.py L662-L671](../src/steam_data_platform/ingestion/steam.py#L662-L671) |
 | `steam_pipeline()`, `run_steam_pipeline()` | Builds the pipeline (`pipeline_name="steam"`, `dataset_name="steam_raw"`) and runs the source | [pipelines_steam.py L19-L30](../src/steam_data_platform/ingestion/pipelines_steam.py#L19-L30) |
 | Entry point | Sets up logging, runs the pipeline, logs only the load ids | [pipelines_steam.py L33-L42](../src/steam_data_platform/ingestion/pipelines_steam.py#L33-L42) |
 | `GAME_APPIDS` and the request pause | The 81 games and the 2 s pause | [settings.py](../src/steam_data_platform/settings.py) |
-| `get_with_retry` | The one place that does GET, timeout and retry | [steam.py L69-L120](../src/steam_data_platform/ingestion/steam.py#L69-L120) |
+| `get_with_retry` | The one place that does GET, timeout and retry | [steam.py L77-L128](../src/steam_data_platform/ingestion/steam.py#L77-L128) |
 
 ## 2. Scope and Data Source
 
@@ -60,7 +65,7 @@ ISteamUserStats/                    ->  player_counts    -> PLAYER_COUNTS
 | Endpoint | `https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/` |
 | API key | None needed |
 | Parameter | `appid=<one id>` |
-| Code | [`PLAYERS_URL`](../src/steam_data_platform/ingestion/steam.py#L34-L36) and [`fetch_player_count`](../src/steam_data_platform/ingestion/steam.py#L149-L175) |
+| Code | [`PLAYERS_URL`](../src/steam_data_platform/ingestion/steam.py#L35-L37) and [`fetch_player_count`](../src/steam_data_platform/ingestion/steam.py#L159-L185) |
 
 ## 3. What We Verified About the API
 
@@ -96,7 +101,7 @@ Probed on 2026-10-27 with a small script (6 requests, 2 s apart). The script liv
 | Time | `collected_at` **per row**, taken right after Steam answers | A player count is one moment, and a run takes about 10 minutes. One time for the whole run would make the last game look 10 minutes too early. (`games` and `review_summary` still use one time per run.) |
 | Retry code | Use the shared `get_with_retry`, add an optional `accept_statuses` | See section 5. |
 | Column types | `player_count` and `result` set to `bigint`, `collected_at` to `timestamp` | A batch where every count is NULL would give dlt nothing to guess the type from. |
-| Request pace | 1 request every 2 s, one at a time, no `parallelized=True` | Steam publishes no limit, so we stay slow. dlt alternates between the three resources, so the whole run is about 243 requests and about 10 minutes. |
+| Request pace | 1 request every 2 s, one at a time, no `parallelized=True` | Steam publishes no limit, so we stay slow. dlt alternates between the three resources, so the whole run is about 243 requests and about 10 minutes. (With the two resources added on 2026-11-02 it is about 486 requests and about 21 minutes.) |
 | Time of day | Start the daily run at about the same clock time | A count depends on the hour. Comparing runs from different hours would mix time-of-day effects with real changes. This goes under limits in the thesis. |
 | Orchestration | No Airflow for now | About 243 requests per run. Later a scheduled script. |
 
@@ -116,13 +121,13 @@ tests/
 
 | Piece | What it does | Code |
 |---|---|---|
-| `get_with_retry(..., accept_statuses=())` | Same helper as before, plus one new option: status codes in `accept_statuses` (we pass `404`) come back as normal answers instead of raising an error. With the default (empty), nothing changes for the other resources. | [steam.py L69-L120](../src/steam_data_platform/ingestion/steam.py#L69-L120) |
-| `fetch_player_count(appid)` | One request per game. Returns `{"player_count": int or None, "result": int}`, or `None` if the answer is not usable at all. | [steam.py L149-L175](../src/steam_data_platform/ingestion/steam.py#L149-L175) |
-| `build_player_row(appid, answer, collected_at)` | Builds one row. A missing count stays `None`. | [steam.py L237-L244](../src/steam_data_platform/ingestion/steam.py#L237-L244) |
-| `player_counts` resource | Loops over the appids, pauses between requests, logs progress every 10 games, takes `collected_at` per row, yields one row per game. `append`, with typed columns. | [steam.py L357-L416](../src/steam_data_platform/ingestion/steam.py#L357-L416) |
-| `steam_source` | Now returns `games`, `review_summary` and `player_counts`. | [steam.py L419-L422](../src/steam_data_platform/ingestion/steam.py#L419-L422) |
+| `get_with_retry(..., accept_statuses=())` | Same helper as before, plus one new option: status codes in `accept_statuses` (we pass `404`) come back as normal answers instead of raising an error. With the default (empty), nothing changes for the other resources. | [steam.py L77-L128](../src/steam_data_platform/ingestion/steam.py#L77-L128) |
+| `fetch_player_count(appid)` | One request per game. Returns `{"player_count": int or None, "result": int}`, or `None` if the answer is not usable at all. | [steam.py L159-L185](../src/steam_data_platform/ingestion/steam.py#L159-L185) |
+| `build_player_row(appid, answer, collected_at)` | Builds one row. A missing count stays `None`. | [steam.py L316-L323](../src/steam_data_platform/ingestion/steam.py#L316-L323) |
+| `player_counts` resource | Loops over the appids, pauses between requests, logs progress every 10 games, takes `collected_at` per row, yields one row per game. `append`, with typed columns. | [steam.py L477-L536](../src/steam_data_platform/ingestion/steam.py#L477-L536) |
+| `steam_source` | Returned `games`, `review_summary` and `player_counts` at the time. It now returns five resources. | [steam.py L662-L671](../src/steam_data_platform/ingestion/steam.py#L662-L671) |
 
-**Why the retry helper had to change.** Before, `get_with_retry` treated every 4xx except 429 as a bug on our side and raised an error. For this endpoint a 404 is a normal answer ("no data"). Without the change, the 4 unreleased games would have been counted as *failed* in every run. With `accept_statuses=(404,)` the 404 comes back like any other answer, and `fetch_player_count` reads the body. A 403 or any other 4xx still raises an error ([test](../tests/test_steam_dlt.py#L284-L289)).
+**Why the retry helper had to change.** Before, `get_with_retry` treated every 4xx except 429 as a bug on our side and raised an error. For this endpoint a 404 is a normal answer ("no data"). Without the change, the 4 unreleased games would have been counted as *failed* in every run. With `accept_statuses=(404,)` the 404 comes back like any other answer, and `fetch_player_count` reads the body. A 403 or any other 4xx still raises an error ([test](../tests/test_steam_dlt.py#L300-L305)).
 
 **Columns in `PLAYER_COUNTS`:**
 
@@ -157,10 +162,10 @@ Important to know: if a run stops with an exception, dlt loads nothing from that
 
 | What is tested | Tests | Code |
 |---|---:|---|
-| `get_with_retry` with `accept_statuses`: an accepted 404 comes back without a retry, a 403 still raises | 2 | [test_steam_dlt.py L269-L289](../tests/test_steam_dlt.py#L269-L289) |
-| `fetch_player_count`: a good count, **zero stays zero**, **404 / 42 gives a NULL count and no retry**, 7 kinds of unusable answers return `None`, not JSON | 11 | [test_steam_dlt.py L292-L343](../tests/test_steam_dlt.py#L292-L343) |
-| `build_player_row`: a missing count stays `None` | 1 | [test_steam_dlt.py L346-L357](../tests/test_steam_dlt.py#L346-L357) |
-| `player_counts` resource: zero and "no data" stay apart, bad games are skipped, each row has its own time in order, repeated 429 stops the run | 2 | [test_steam_dlt.py L360-L405](../tests/test_steam_dlt.py#L360-L405) |
+| `get_with_retry` with `accept_statuses`: an accepted 404 comes back without a retry, a 403 still raises | 2 | [test_steam_dlt.py L285-L305](../tests/test_steam_dlt.py#L285-L305) |
+| `fetch_player_count`: a good count, **zero stays zero**, **404 / 42 gives a NULL count and no retry**, 7 kinds of unusable answers return `None`, not JSON | 11 | [test_steam_dlt.py L308-L359](../tests/test_steam_dlt.py#L308-L359) |
+| `build_player_row`: a missing count stays `None` | 1 | [test_steam_dlt.py L362-L373](../tests/test_steam_dlt.py#L362-L373) |
+| `player_counts` resource: zero and "no data" stay apart, bad games are skipped, each row has its own time in order, repeated 429 stops the run | 2 | [test_steam_dlt.py L376-L421](../tests/test_steam_dlt.py#L376-L421) |
 
 ```bash
 uv run pytest -q
@@ -229,7 +234,7 @@ These are proposals, to confirm when we build the staging models. The full table
 
 | File | Purpose |
 |---|---|
-| [`src/steam_data_platform/ingestion/steam.py`](../src/steam_data_platform/ingestion/steam.py) | Request helpers, the three resources, `steam_source` |
+| [`src/steam_data_platform/ingestion/steam.py`](../src/steam_data_platform/ingestion/steam.py) | Request helpers, the resources, `steam_source` |
 | [`src/steam_data_platform/ingestion/pipelines_steam.py`](../src/steam_data_platform/ingestion/pipelines_steam.py) | Builds the pipeline and runs it |
 | [`src/steam_data_platform/settings.py`](../src/steam_data_platform/settings.py) | Game list and request pause |
 | [`src/steam_data_platform/connections.py`](../src/steam_data_platform/connections.py) | Snowflake credentials from environment variables |
@@ -237,9 +242,13 @@ These are proposals, to confirm when we build the staging models. The full table
 | [`notebooks/03_eda_player_counts.ipynb`](../notebooks/03_eda_player_counts.ipynb) | Validation queries, results and findings |
 | [`05_games__dlt_ingestion.md`](05_games__dlt_ingestion.md) | The `games` step |
 | [`06_reviews__dlt_ingestion.md`](06_reviews__dlt_ingestion.md) | The `review_summary` step |
+| [`11_review_recent__dlt_ingestion.md`](11_review_recent__dlt_ingestion.md) | The `review_recent` step |
+| [`12_achievements__dlt_ingestion.md`](12_achievements__dlt_ingestion.md) | The `achievements` step |
 | [`08_steam_py_code_guide.md`](08_steam_py_code_guide.md) | A guide to read next to `steam.py` |
 
 ## Next Steps
 
-1. A scheduled run with a non-interactive Snowflake login, at about the same clock time every day.
-2. dbt sources and staging on their own branches (`feat/dbt-sources`, `feat/dbt-staging`, ...).
+1. ~~dbt sources and staging for the three tables~~ Done, see [doc 10](10_dbt_sources_staging.md).
+2. ~~Recent reviews and achievements~~ Done on 2026-11-02, see [doc 11](11_review_recent__dlt_ingestion.md) and [doc 12](12_achievements__dlt_ingestion.md).
+3. dbt staging for the two new tables.
+4. A scheduled run with a non-interactive Snowflake login, at about the same clock time every day.

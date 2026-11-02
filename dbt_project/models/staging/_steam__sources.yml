@@ -13,3 +13,7 @@ sources:
         description: Review totals (thumbs up and down), one row per game per run.
       - name: player_counts
         description: Players right now, one row per game per run. A NULL count means Steam had no data.
+      - name: review_recent
+        description: Reviews from the last 30 days (thumbs up and down, all languages), one row per game per run.
+      - name: achievements
+        description: Share of players who unlocked each achievement, one row per game and achievement per run. Games without achievements have no rows.

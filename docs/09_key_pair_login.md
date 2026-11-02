@@ -68,14 +68,14 @@ Now:     private key file (outside the repo)  ->  dlt  ->  Snowflake
 | Key file is not encrypted | A scheduled or unattended run then needs no passphrase. The file sits in the user folder. Anyone who can read it can log in as `DLT_USER`. Do not copy it, commit it or send it. |
 | Full pipeline run with the key | **Done on 2026-10-30.** 243 requests, no 429, about 10 minutes (15:05 to 15:15 Stockholm time). Load `1793369111.4503539` has status 0 and 81 rows in `GAMES`, `REVIEW_SUMMARY` and `PLAYER_COUNTS`. Older loads were not changed. We ran it as a normal daily run, not as a separate test, because `append` adds rows on every run. |
 | Notebooks 01 to 03 | **Done on 2026-10-30.** Their connect cell uses `private_key_file=os.environ["SNOWFLAKE_LOADER_PRIVATE_KEY_PATH"]` instead of the password. All three connected and ran. |
-| `DBT_USER` and `STREAMLIT_USER` | They are also `PERSON` users with passwords, so dbt Core and Streamlit may run into the same problem. We decide when we build them. |
+| `DBT_USER` and `STREAMLIT_USER` | They are also `PERSON` users with passwords, so dbt Core and Streamlit may run into the same problem. **`DBT_USER` (decided 2026-11-02):** keeps the password (`HAS_MFA = false`), see [doc 10](10_dbt_sources_staging.md). `STREAMLIT_USER` is decided when Streamlit is built. |
 | Dates | The rollout dates come from Snowflake's page and are "subject to change". We do not know the date for our account. |
 
 ## 6. Open Items
 
 - ~~Update the connect cell in notebooks 01 to 03 to use the key.~~ Done on 2026-10-30.
 - Decide later whether to remove the password from `DLT_USER`, or change it to `SERVICE`. Read Snowflake's docs first.
-- Use a key pair for `DBT_USER` and `STREAMLIT_USER` when dbt and Streamlit are built.
+- `DBT_USER` keeps the password for now. If Snowflake blocks passwords, repeat the steps in this doc for `DBT_USER`. Decide for `STREAMLIT_USER` when Streamlit is built.
 - Airflow: the same key and `loader_credentials()` can be used there.
 
 ## 7. How to Run

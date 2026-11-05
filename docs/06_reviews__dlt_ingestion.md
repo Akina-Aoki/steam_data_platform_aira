@@ -181,7 +181,7 @@ These are proposals, to confirm when we build the staging models. The full list 
 | 3 | Counts add up | Keep the three counts. Calculate `pct_positive = total_positive / NULLIF(total_reviews, 0)`. |
 | 4 | 5 games have no reviews | Keep the rows, add a flag such as `has_reviews`. Use `coming_soon` from `games` for "unreleased". |
 | 5 | The label is free text, and score 0 means both "no reviews" and "1 review" | Keep both raw. Do not test the label against a fixed list. Base the analysis on `pct_positive` and `total_reviews`. |
-| 6 | Small samples | Compare sentiment only above a minimum number of reviews (100 is a proposal, not tested) |
+| 6 | Small samples | Show the number of reviews next to every percent. No minimum is needed because the dashboard shows one game at a time (decided 2026-11-05, [doc 13](13_conceptual_model.md)). |
 | 7 | Totals, not new reviews | Daily change = difference between two snapshots (`LAG`). Do not assume a total can never go down. |
 | 8 | Prices are discounted at the time of the snapshot | Join to `games` and keep both `price_initial` and `price_final` |
 | 9 | Repeated rows are the history | Not an error |
@@ -192,7 +192,7 @@ These are proposals, to confirm when we build the staging models. The full list 
 - **History:** at the time of the first load there was one snapshot. Each run adds 81 rows.
 - **Totals can change in ways we have not seen:** we do not know if a total can go down between two runs. It needs more than one run.
 - **Free Edition:** we do not know why *Knights of Pen and Paper 2: Free Edition* has no reviews.
-- **Minimum number of reviews** for comparisons: 100 is only a proposal.
+- **Minimum number of reviews** for comparisons: not needed, decided on 2026-11-05 ([doc 13](13_conceptual_model.md), section 9).
 - **Retry code:** done on 2026-10-30. `fetch_app_details` now uses `get_with_retry`, so the retry logic exists once.
 - **Reviews are a stand-in:** Steam gives no sales numbers. We can show correlation, not causation.
 - **Login:** `DLT_USER` is a `PERSON` user with a password and **no MFA** (checked with `DESC USER` on 2026-10-30), which is why a password-only load worked. Snowflake is phasing out password-only sign-in for `PERSON` users, so the loader now logs in with a key pair (see [doc 09](09_key_pair_login.md)).

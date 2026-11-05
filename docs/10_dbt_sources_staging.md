@@ -105,7 +105,7 @@ After building the two new models, one read-only query per model was run in Snow
 | Finding | Evidence | What staging does |
 |---|---|---|
 | A game with no recent reviews gets no percent | `stg_steam__review_recent`: 81 rows, 5 with `has_recent_reviews = false`, and the same 5 have `pct_positive_recent` NULL | `nullif` in the division, so NULL and not 0 % |
-| Few games have many recent reviews | 11 of 81 games have 100 or more recent reviews. The percent runs from 4.2 to 100.0. | Nothing in staging. A minimum number of reviews for a percent is a mart decision. |
+| Few games have many recent reviews | 11 of 81 games have 100 or more recent reviews. The percent runs from 4.2 to 100.0. | Nothing in staging. No minimum number of reviews is needed, because the dashboard shows one game at a time ([doc 13](13_conceptual_model.md), section 9). |
 | Every achievement percent is a number | `stg_steam__achievements`: 3,966 rows, 49 games, 3,925 different names, 0 rows where `percent_unlocked` is NULL, range 0 to 100 | `try_to_double` and a test for NULL and for the range |
 | The achievement name alone is not unique | 3,925 different names in 3,966 rows. The ingestion notes ([doc 12](12_achievements__dlt_ingestion.md)) counted 41 names used by more than one game. | The `unique` test uses game + name + run |
 | The language flag splits the rows by day | 243 rows with `counts_all_languages = false` (2026-10-26 to 2026-10-30) and 81 rows with `true` (2026-11-02). These numbers are what we expected from the 324 raw rows (4 runs of 81 games). | `counts_all_languages` |
@@ -190,5 +190,5 @@ This was tested with `dbt debug` on 2026-11-02 in Git Bash (`All checks passed!`
 | Marts and Streamlit | Later |
 | What `result = 42` means exactly | Unverified. We only say "Steam has no data". |
 | Rule for repeated runs on the same day | Open. Joining on date only works with one run per day. |
-| Minimum number of reviews and players for comparisons | Not decided |
+| Minimum number of reviews and players for comparisons | Decided on 2026-11-05: none needed, the dashboard shows one game at a time ([doc 13](13_conceptual_model.md), section 9) |
 | Checked on today's data only (5 snapshots of games) | If Steam changes a date format or sends a new `result` code, the tests should warn. Not tested on such a change. |

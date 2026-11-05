@@ -153,7 +153,7 @@ These are proposals. The full list is in section 10 of the notebook.
 | 1 | One row per game per load | `unique` on (`steam_appid`, `load_id`), `not_null`, a relationship test to `games`. Include `day_range` if we add other windows. |
 | 2 | Total and percent are not stored | Add `recent_total`, `has_recent_reviews` and `pct_positive_recent` (NULL when the total is 0) |
 | 3 | 0 is a real number | Never turn a NULL percent into 0. Use `coming_soon` for "unreleased". |
-| 4 | Small numbers are noise | Show the recent percent only above a minimum number of recent reviews (not decided) |
+| 4 | Small numbers are noise | Show the number of recent reviews next to the recent percent. No minimum is needed because the dashboard shows one game at a time (decided 2026-11-05, [doc 13](13_conceptual_model.md)). |
 | 5 | The 30 days overlap between runs | Never add the counts over days. Use the latest row for "now". |
 | 6 | `review_summary` is English only before 2026-11-02 | A flag such as `counts_all_languages` in `stg_steam__review_summary`. Compare with `review_recent` only on flagged rows. |
 | 7 | Recent can never be more than all-time | A `warn` test in the intermediate layer |
@@ -162,7 +162,7 @@ These are proposals. The full list is in section 10 of the notebook.
 
 - **One snapshot:** no trend yet. Each run adds 81 rows.
 - **Rolling window:** two runs on consecutive days share 29 of 30 days.
-- **Small games are noise:** the minimum number of reviews is not decided.
+- **Small games are noise:** no minimum is needed, the count is shown next to the percent (decided 2026-11-05, [doc 13](13_conceptual_model.md)).
 - **Review-bomb filter:** Steam says it is on by default. We did not test how much it changes the counts.
 - **The count moves a little between requests:** Stellaris gave 558 and 559 within hours. We do not know why.
 - **Why Europa Universalis IV and Prison Architect dropped:** unknown. News or patch dates could help later.

@@ -213,7 +213,7 @@ These are proposals, to confirm when we build the staging models. The full table
 | 3 | NULL means no data, `0` is a real zero | Never fill NULL with 0. Add a flag `has_player_data` from `result = 1`. |
 | 3b | A new result code could appear | `accepted_values` test on `result` (1 and 42) with severity `warn`, and a test that `result = 1` always has a count and `result = 42` never has one |
 | 4 | `result = 42` does not mean "unreleased" (a fake id gives the same answer) | Use `coming_soon` from `games` |
-| 5 | Most games have very few players | Compare only above a minimum, or show only the top games, or use a log scale. The minimum is not decided. |
+| 5 | Most games have very few players | Show one game at a time and no ranking, so no minimum is needed (decided 2026-11-05, [doc 13](13_conceptual_model.md)). A top list or a log scale stays possible for "most players now". |
 | 6 | A count is one moment | Run at about the same clock time every day. Show the hour of the snapshot next to the count. |
 | 7 | Repeated rows are the history | Not an error. For "players now" use the latest row per game. |
 
@@ -225,7 +225,7 @@ These are proposals, to confirm when we build the staging models. The full table
 - **Released game with no data:** not seen yet.
 - **Why *Knights of Pen and Paper 2: Free Edition* has 0 players and no reviews:** unknown.
 - **History:** a single snapshot of player counts exists. Each run adds 81 rows.
-- **Repeated runs:** proposed rule is one scheduled run per day, and the latest row per game for current-state questions. Not decided.
+- **Repeated runs:** decided on 2026-11-05: the grain is one row per game per run, joined on `steam_appid` + `load_id` ([doc 13](13_conceptual_model.md)). Two runs on one day are two rows. "Now" means the newest run.
 - **Login:** `DLT_USER` is a `PERSON` user with a password and **no MFA** (checked with `DESC USER` on 2026-10-30), which is why a password-only load worked. Snowflake is phasing out password-only sign-in for `PERSON` users, so the loader now logs in with a key pair (see [doc 09](09_key_pair_login.md)).
 - **Small clean-ups:** done on 2026-10-30. `fetch_app_details` now uses `get_with_retry`, and the `games` resource logs a progress line every 10 games.
 - **Undocumented endpoint:** the answer can change without notice.

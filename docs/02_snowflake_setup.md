@@ -51,8 +51,8 @@ Created four schemas inside `STEAM_DB`.
 |---|---|---|
 | `STEAM_RAW` | Raw data ingestion | `STEAM_LOADER` |
 | `STAGING` | Cleaning and standardization | `STEAM_TRANSFORMER` |
-| `INTERMEDIATE` | Joins and business logic | `STEAM_TRANSFORMER` |
-| `MARTS` | Fact tables, dimensions, and analytics | `STEAM_TRANSFORMER` |
+| `INTERMEDIATE` | Joins, business logic, and the fact and dimension tables (decided 2026-11-05, see [doc 13](13_conceptual_model.md)) | `STEAM_TRANSFORMER` |
+| `MARTS` | Analytics tables that Streamlit reads | `STEAM_TRANSFORMER` |
 
 Ownership allows the assigned role to manage its schema.
 

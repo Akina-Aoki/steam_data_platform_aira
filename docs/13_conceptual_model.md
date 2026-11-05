@@ -1,0 +1,249 @@
+# Conceptual Model and Business Areas: Steam Data Platform
+
+## Overview
+
+This document describes **what the data model is about**, before any tables or columns are built. It lists the things we want to know about (entities), how they connect, and which business questions the data can and cannot answer.
+
+**Status:** Draft. This is a proposal written on 2026-11-05. Nothing in it is built yet. Items marked *proposed* are not agreed.
+
+`Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate (facts and dimensions) → dbt Marts → Streamlit`
+
+Staging is done ([doc 10](10_dbt_sources_staging.md)). This document is the plan for the next two layers.
+
+## 1. The grain
+
+The grain says what **one row** of the fact table means. It is the most important choice in the model.
+
+| Option | One row is | Problem |
+|---|---|---|
+| **Per run** *(proposed)* | one game in one collection run | None known |
+| Per day | one game on one day | Breaks the first time we run dlt twice on the same day |
+
+**Why per run:** on 2026-11-05 a query on the staging views showed that each `load_id` is shared by all the tables loaded in that run, with exactly 81 rows per table. The newest two runs have it in all four tables. So `steam_appid` + `load_id` finds the matching row in each table. The date alone does not. A player count row has its own time, and a run takes 10 to 20 minutes. The per-run grain is *proposed*, not agreed yet.
+
+Not tested: a failed run, and two runs in one day.
+
+## 2. Business areas
+
+This replaces the table in the project proposal. It matches what the data can really answer.
+
+| # | Area | Business value: the question | Data used | Limits |
+|---|---|---|---|---|
+| 1 | **Portfolio overview** | How big is the catalogue? How does it split by genre, release year, price level, free or paid, released or coming soon? | `games` | Genre needs the genre mart. 81 hand-picked games, not all of Paradox. |
+| 2 | **Player engagement** | Which games have the most players now? How do player counts change from one run to the next? | `player_counts` | One moment per run, so the hour matters. About 4 runs. No seasons, the history is too short. "No data" is not 0. |
+| 3 | **Player sentiment** | Which games have the highest share of positive reviews? How do the last 30 days compare with all time? | `review_summary`, `review_recent` | Before 2026-11-02 the totals count English reviews only. A minimum number of reviews is not decided. |
+| 4 | **Pricing and discounts** | How do prices and discounts compare? Do games with a discount have different reviews or players? | `games`, reviews, players | We only see discounts that happen on our collection days. **Not checked yet** whether any exist. |
+| 5 | **Release lifecycle** | How do newer and older releases compare in sentiment and players? | `games` (release date), reviews, players | Release dates are parsed from text. Unreleased games are left out of comparisons. |
+| 6 | **Franchise and genre comparison** | How do franchises and genres compare? | Same facts, grouped | Franchise needs a hand-made list. Genre comes from the mart. |
+| 7 | **Attention areas** | Which games show falling sentiment or falling player counts? | Change between runs, calculated in a mart | Short history. "Falling" means a few weeks, not seasons. Thresholds are not decided. |
+| 8 | **Player progression** *(optional)* | How far do players go? What share of players unlock the achievements? | `achievements` | Only 49 of 81 games have achievements. Very few runs so far. |
+
+
+## 3. Models
+
+Think of a napkin sketch of a house. It shows the rooms and the doors between them. It does not show the size of the windows or the type of floor.
+
+| Model | What it shows | Example here | Where it lives |
+|---|---|---|---|
+| **Conceptual** | The things and how they connect. No columns. | "A game has many daily snapshots." | This document |
+| **Logical** | Columns, keys and links | `fact_game_snapshot` has `steam_appid` and `load_id` | Section 4 of this document (drawn on dbdiagram.io) |
+| **Physical** | The real tables in Snowflake | dbt models in `STEAM_DB` | `dbt_project/models/` |
+
+We go in this order so that the business questions decide the tables, and not the other way around.
+
+## 4. Star schema
+
+
+| Part | What it holds | Everyday comparison |
+|---|---|---|
+| **Fact** | Measurements that happened (price, reviews, players) | A receipt line: "on this day, this game had this many players" |
+| **Dimension** | Descriptions you filter and group by (game, date) | The labels on the receipt: which shop, which day |
+
+We use a **strict star**: every dimension connects directly to the fact. There are no extra tables between a dimension and the fact. It is simple to read and simple to query. 
+
+## 5. Entities
+
+
+| Entity | Type | Plain meaning | Comes from | In the star? |
+|---|---|---|---|---|
+| **Game snapshot** | Fact | What we measured about one game in one collection run | `games`, `review_summary`, `review_recent`, `player_counts` | Yes (the centre) |
+| **Game** | Dimension | One Paradox game and the facts about it that rarely change | `games` (latest row) | Yes |
+| **Date** | Dimension | One calendar day (Stockholm time) | Built by dbt | Yes |
+| **Genre** | Concept | A genre label. A game can have several. | `games.genres` (a list) | No. It is split later in a mart. |
+| **Franchise** | Concept | A group of games, such as one series | Hand-made list, **does not exist yet** | No. It will be one column on Game. |
+| **Achievement** | Concept | One achievement of one game | `achievements` | No. Optional, later. |
+
+### Why Genre is not in the star
+
+A game has several genres, and one genre has several games. This is a **many-to-many** link. A strict star cannot hold it without an extra table.
+
+The genre list stays as a list on the Game dimension. A mart splits it when we need a genre comparison.
+
+| | Tradeoff |
+|---|---|
+| Good | The star stays simple. No extra tables. |
+| Bad | The splitting logic lives in one mart. A second genre question later may repeat it. |
+| Rule | A game with 3 genres counts in 3 genre rows. Averages per genre are fine. **Never add the genres together into a portfolio total.** |
+
+## 6. Relationships and logical model
+
+### 6.1 Conceptual relationships
+
+This diagram shows **everything we talk about** in the business. The left box holds the three things that become tables. The right box holds things that are real, but do **not** become their own table.
+
+```mermaid
+flowchart LR
+    subgraph STAR["The star: these become tables"]
+        S["Game snapshot (fact)"]
+        G["Game"]
+        D["Date"]
+    end
+    subgraph OUT["Not a table: a column or a mart"]
+        GE["Genre"]
+        F["Franchise"]
+        A["Achievement"]
+    end
+    S -->|many to one| G
+    S -->|many to one| D
+    G <-->|many to many| GE
+    G -->|many to one| F
+    A -->|many to one| G
+```
+
+| Link | Meaning | In the logical model |
+|---|---|---|
+| Game snapshot to Game | A game has many snapshots, one per run | A link on `steam_appid` |
+| Game snapshot to Date | A day has a snapshot of every game | A link on `snapshot_date` |
+| Game to Genre | A game has several genres | No table. A column, `genres`. A mart splits it. |
+| Game to Franchise | A game belongs to one franchise *(proposed)* | No table. A column, `franchise`. |
+| Achievement to Game | A game has many achievements | Not in the model for now |
+
+The conceptual model shows everything we talk about. The logical model (next part) keeps only the star. That is why it looks smaller.
+
+### 6.2 Logical model
+
+![Logical model: fact_game_snapshot in the middle, dim_game and dim_date around it, and mart_genre_comparison on its own](../assets/logical_model_1.png)
+
+
+### 6.3 What changed from the conceptual model to the logical one
+
+| Conceptual | Logical |
+|---|---|
+| Genre is an entity | No table. It is the list column `dim_game.genres` (plus `genres_text`). The mart splits it. |
+| Franchise is an entity | One column, `dim_game.franchise`. It stays NULL until the list exists. |
+| Achievement is an entity | Not in the model for now |
+| Genre mart | `mart_genre_comparison` stands alone, with no arrow. It reads from the star but is not part of it. |
+
+### 6.4 Columns of each table
+
+The "comes from" column names the staging view the value is taken from ([doc 10](10_dbt_sources_staging.md)). Everything is *proposed*.
+
+#### `fact_game_snapshot` (one game in one run)
+
+| Group | Columns | Comes from | Note |
+|---|---|---|---|
+| Keys | `steam_appid`, `load_id`, `snapshot_date` | `stg_steam__games` (`steam_appid`, `load_id`, `collected_date`) | `steam_appid` + `load_id` is unique. `snapshot_date` is the Stockholm day. |
+| Time | `collected_at_utc` | `stg_steam__games` | The time of the `games` row. Rows of other tables in the same run are a few minutes apart. |
+| Price | `price_currency`, `price_initial`, `price_final`, `discount_percent` | `stg_steam__games` | NULL means no price, never 0. Two released games have no price (known from earlier checks). |
+| Status | `is_free`, `coming_soon` | `stg_steam__games` | They can change over time, so they are in the fact and not in `dim_game`. |
+| Reviews, all time | `total_positive`, `total_negative`, `counts_all_languages` | `stg_steam__review_summary` | The flag is `false` before 2026-11-02 (English only). The total is positive + negative, so it is not stored. |
+| Reviews, last 30 days | `recent_positive`, `recent_negative` | `stg_steam__review_recent` | NULL for runs before this table existed. |
+| Players | `player_count`, `has_player_data`, `collected_hour_local` | `stg_steam__player_counts` | NULL means no data, 0 is a real zero. The hour tells when the count was taken. |
+
+Counts are stored, percentages are not. A percentage is worked out from sums later, in the mart or the dashboard.
+
+#### `dim_game` (one game, latest state)
+
+| Group | Columns | Comes from | Note |
+|---|---|---|---|
+| Identity | `steam_appid`, `name`, `type` | `stg_steam__games` | Latest row per game (this is what `int_steam__games_latest` will give). |
+| Release | `release_date`, `release_year`, `release_date_text` | `stg_steam__games` | `release_year` is worked out in dbt. NULL for unreleased games. |
+| Store info | `required_age`, `metacritic_score`, `website`, `short_description` | `stg_steam__games` | I have not checked whether `metacritic_score` changes between runs. If it does, it moves to the fact. |
+| Platforms | `platform_windows`, `platform_mac`, `platform_linux` | `stg_steam__games` | |
+| Lists | `developers`, `publishers`, `genres`, `categories` | `stg_steam__games` | Kept as lists. |
+| Readable text | `genres_text` | Built by dbt from `genres` | For example "Strategy, Simulation". |
+| Franchise | `franchise` | Hand-made list | NULL until the list exists. |
+
+#### `dim_date` (one Stockholm day)
+
+Built by dbt, not read from Steam. Columns: `date_day`, `year`, `month`, `month_name`, `week_of_year`, `day_of_week`, `is_weekend`. It is used to group by day, week and month.
+
+#### `mart_genre_comparison` (one genre on one day)
+
+Not part of the star. It reads `fact_game_snapshot` and `dim_game`, splits `dim_game.genres` and groups by genre and day. Columns: `genre`, `snapshot_date`, `game_count`, `avg_pct_positive`, `avg_player_count`, `avg_price_final`. Rules: a game with several genres counts once per genre, and never add genres together.
+
+
+
+### What changed from the proposal
+
+| Change | Reason |
+|---|---|
+| **Removed:** Review behavior (playtime, review language, markets) | We load review totals only, not single reviews. This is a data gap, not a modeling one. State it as a limit in the thesis. |
+| **Reworded:** "days, weeks or seasons" is now "runs" and "weeks" | The history starts on 2026-10-23. Seasons need months. |
+| **Added:** Player progression | The data already exists. It is optional so the thesis does not depend on it. |
+| **Sharpened:** Sentiment and Attention areas | `review_recent` came after the proposal and gives a real "last 30 days vs all time" signal. |
+
+## 7. How much history do we have?
+
+Row counts per run, from the query on 2026-11-05. The date of the newest run was not checked.
+
+| Table | Runs | Rows per run |
+|---|---|---|
+| `games` | 6 | 81 |
+| `review_summary` | 5 | 81 |
+| `player_counts` | 4 | 81 |
+| `review_recent` | 2 | 81 |
+| `achievements` | not in that query | |
+
+This is why `games` is the base of the fact table. The other tables are joined to it with a **left join**, so early runs are kept and the missing values stay NULL.
+
+## 8. Things that are easy to miss
+
+| Topic | What to remember |
+|---|---|
+| **NULL is not 0** | A missing price, a missing player count and a game without achievements all stay NULL. A real 0 is a real number. |
+| **Language switch** | Review totals before 2026-11-02 count English only. A chart of totals jumps on that day. Use `counts_all_languages` in every trend and every change calculation. |
+| **Never add up cumulative numbers** | `total_reviews` is a running total. `recent_total` covers 30 days, and two runs share 29 of them. Sum games inside one run, never across runs. |
+| **"Now" means the latest run** | Every "current" number on the dashboard uses the newest run only. |
+| **Player counts depend on the hour** | Runs happened at different hours of the day. Keep the hour next to the count. |
+| **Gaps in the date axis** | Runs are not daily. A line chart would draw a straight line over missing days and look like a trend. Use markers. |
+| **Prices** | Prices are in euros (store country Sweden). A free game and a missing price are different things. Decide whether averages include free games. |
+| **Percentages** | The fact stores the counts, not the percentages. A percentage of totals is correct. An average of percentages treats a game with 3 reviews like a game with 30,000. Decide the minimum number of reviews. |
+| **Things that change over time** | `coming_soon`, `is_free` and prices live in the fact. The Game dimension keeps only things that rarely change, so old snapshots do not show today's value. |
+| **Time zones** | `snapshot_date` is the Stockholm day. Snowsight shows Pacific time. Use the date column, not the timestamp, for charts. |
+| **Completeness test** | A run should have exactly 81 games. A warning test would catch a partial load. |
+| **Correlation** | Reviews and players are indicators, not sales. The thesis shows relationships, not causes. |
+
+## 9. Decisions
+
+| Decision | Status | Reason |
+|---|---|---|
+| Strict star schema | Agreed | Simple project, simple queries |
+| Genre is split in a mart, not stored as a bridge table | Agreed | Fewer tables. The tradeoff is in section 3. |
+| Grain is one row per game per run | **Proposed** | Same `load_id` in all tables, supports a second run on one day |
+| The fact stores counts, not percentages | Proposed | Percentages cannot be added or averaged correctly |
+| Change between runs (LAG) is calculated in a mart, not in the fact | Proposed | The fact stays as plain measurements |
+| Achievements stay out of the star for now | Proposed | Only 49 games, area 8 is optional |
+| Facts and dimensions live in the intermediate layer | **Open** | The proposal says so. Our earlier plan had marts as tables and intermediate as prep views. Decide which one the thesis follows. |
+| Minimum number of reviews and players for comparisons | **Open** | Marts decision |
+| Franchise list | **Open** | Needs a list from Aira |
+
+## 10. Things in the project proposal that no longer match
+
+| In the proposal | Reality |
+|---|---|
+| "about 82 Steam apps" | 81 games in `GAME_APPIDS` |
+| "selected countries and major airports rather than collecting all flights worldwide" | This sentence comes from the Flight-punctuality project. It does not belong in the Steam proposal and should be removed. |
+| Review behavior as a business area | Removed, see section 6 |
+| "player reviews" as a source | We load review totals only, not single reviews |
+| Airflow as Stage 2 | Not decided. Runs are done by hand, once a day at most. |
+
+## 11. Next steps
+
+| Step | What |
+|---|---|
+| 1 | Agree on the open items in section 9 |
+| 2 | Logical model: drawn on dbdiagram.io (section 4). Check it once the open items are decided. |
+| 3 | Build the intermediate models, starting with `int_steam__games_latest` |
+| 4 | Build the facts, the dimensions and the marts |
+| 5 | Write the next doc for the intermediate layer |

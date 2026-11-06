@@ -1,0 +1,17 @@
+# This file documents the intermediate models and tells dbt which data quality checks to run.
+# Comments starting with # are for people reading this file; dbt ignores them.
+version: 2
+
+models:
+  - name: int_steam__games_latest
+    description: >
+      One row per game: the newest row of each game from stg_steam__games.
+      The base of dim_game. Unreleased games are kept (coming_soon tells them apart).
+      If a game is missing from the newest run, its row comes from an older run.
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game. One row per game, so it is the key.
+        data_tests:
+          - unique        # Fail if a game appears twice, so the "keep number 1" step went wrong.
+          - not_null      # Fail if any row is missing a game id.

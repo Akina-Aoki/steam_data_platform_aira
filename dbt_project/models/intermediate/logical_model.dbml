@@ -11,25 +11,17 @@ Table dim_date {
 Table dim_game {
   steam_appid int [pk, note: 'Steam id, one row per game, latest state']
   name varchar
-  type varchar
   release_date date [note: 'NULL for unreleased games']
   release_year int
-  release_date_text varchar
-  required_age int
-  metacritic_score int
+  metacritic_score int [note: 'NULL = no score, never 0']
   website varchar
   short_description varchar
-  platform_windows boolean
-  platform_mac boolean
-  platform_linux boolean
   developers variant [note: 'list']
-  publishers variant [note: 'list']
   genres variant [note: 'list, split later in the genre mart']
   genres_text varchar [note: 'for example Strategy, Simulation']
-  categories variant [note: 'list']
 }
 
-Table fact_game_snapshot {
+Table fact_game_store {
   steam_appid int [not null, ref: > dim_game.steam_appid]
   load_id varchar [not null, note: 'Which dlt run the row came from']
   snapshot_date date [not null, ref: > dim_date.date_day, note: 'Stockholm day of the run']
@@ -37,21 +29,48 @@ Table fact_game_snapshot {
   price_currency varchar
   price_initial decimal(10,2) [note: 'NULL = no price, never 0']
   price_final decimal(10,2)
-  discount_percent int
-  is_free boolean
+  is_free boolean [note: 'A free game has no price (NULL)']
   coming_soon boolean
-  total_positive int [note: 'NULL before the review_summary runs']
-  total_negative int
-  counts_all_languages boolean [note: 'false before 2026-11-02']
-  recent_positive int [note: 'NULL before the review_recent runs']
-  recent_negative int
-  player_count int [note: 'NULL = no data, 0 = real zero']
-  has_player_data boolean
-  collected_hour_local int [note: 'Stockholm hour of the player count']
 
   indexes {
     (steam_appid, load_id) [pk]
   }
+
+  Note: 'What the Steam store page showed, one row per game per run.'
+}
+
+Table fact_game_reviews {
+  steam_appid int [not null, ref: > dim_game.steam_appid]
+  load_id varchar [not null, note: 'Which dlt run the row came from']
+  snapshot_date date [not null, ref: > dim_date.date_day, note: 'Stockholm day of the run']
+  collected_at_utc timestamp
+  total_positive int
+  total_negative int
+  counts_all_languages boolean [note: 'false before 2026-11-02']
+  recent_positive int [note: 'NULL before the review_recent runs']
+  recent_negative int
+
+  indexes {
+    (steam_appid, load_id) [pk]
+  }
+
+  Note: 'Review counts, all time and the last 30 days, one row per game per run.'
+}
+
+Table fact_game_players {
+  steam_appid int [not null, ref: > dim_game.steam_appid]
+  load_id varchar [not null, note: 'Which dlt run the row came from']
+  snapshot_date date [not null, ref: > dim_date.date_day, note: 'Stockholm day of the player count']
+  collected_at_utc timestamp
+  collected_hour_local int [note: 'Stockholm hour of the player count']
+  player_count int [note: 'NULL = no data, 0 = real zero']
+  has_player_data boolean
+
+  indexes {
+    (steam_appid, load_id) [pk]
+  }
+
+  Note: 'Player count at one moment, one row per game per run.'
 }
 
 Table mart_genre_comparison {
@@ -62,7 +81,7 @@ Table mart_genre_comparison {
   avg_player_count decimal(12,1)
   avg_price_final decimal(10,2)
 
-  Note: 'Mart, not part of the star. Built from the fact and dim_game by splitting dim_game.genres. Never add genres together, a game counts once per genre.'
+  Note: 'Mart, not part of the star. Built from the facts and dim_game by splitting dim_game.genres. Never add genres together, a game counts once per genre.'
 }
 
 
@@ -76,7 +95,7 @@ Table mart_game_detail {
   is_free boolean
   price_initial decimal(10,2) [note: 'NULL = no price, never 0']
   price_final decimal(10,2)
-  discount_percent int
+  discount_percent int [note: 'worked out here from the two prices']
   total_reviews int [note: 'positive + negative, worked out here']
   pct_positive decimal(5,1) [note: 'all time, NULL if no reviews']
   counts_all_languages boolean [note: 'false before 2026-11-02']
@@ -91,5 +110,5 @@ Table mart_game_detail {
     (steam_appid, load_id) [pk]
   }
 
-  Note: 'Mart for the Streamlit game page, not part of the star. One row per game per run, built from fact_game_snapshot and dim_game. Percentages and changes are worked out here, the fact stores counts only.'
+  Note: 'Mart for the Streamlit game page, not part of the star. One row per game per run, built from the three facts and dim_game. Percentages and changes are worked out here, the facts store counts only.'
 }

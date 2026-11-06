@@ -161,7 +161,7 @@ Counts are stored, percentages are not. A percentage is worked out from sums lat
 
 #### `dim_date` (one Stockholm day)
 
-Built by dbt, not read from Steam. Columns: `date_day`, `year`, `month`, `month_name`, `week_of_year`, `day_of_week`, `is_weekend`. It is used to group by day, week and month.
+Built by dbt from the run days in `stg_steam__games` (one row per day that has a run, no `date_spine`, see [doc 14](14_dbt_intermediate.md)). Columns: `date_day`, `year`, `month`, `month_name`, `week_of_year`, `day_of_week`, `is_weekend`. It is used to group by day, week and month.
 
 #### `mart_genre_comparison` (one genre on one day)
 

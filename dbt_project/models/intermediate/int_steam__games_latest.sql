@@ -3,7 +3,7 @@
 -- One row per game: the newest row of each game from stg_steam__games.
 -- It is the base of dim_game.
 
-with game as (
+with games as (
     select * from {{ref('stg_steam__games')}}
 ),
 

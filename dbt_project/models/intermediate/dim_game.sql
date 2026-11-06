@@ -14,30 +14,21 @@ final as (
     select
         steam_appid,
         name,
-        type,
 
         release_date,
         -- NULL for unreleased games, because release_date is NULL for them
         year(release_date) as release_year,
-        release_date_text,
 
-        required_age,
         -- NULL means Steam shows no Metacritic score. Never 0.
         metacritic_score,
         website,
         short_description,
 
-        platform_windows,
-        platform_mac,
-        platform_linux,
-
-        -- These four stay lists. The genre list is split later, in the genre mart.
+        -- Stays as list, split in marts
         developers,
-        publishers,
         genres,
         -- ["Indie", "Simulation"] becomes Indie, Simulation. An empty list gives NULL.
-        nullif(array_to_string(genres::array, ', '), '') as genres_text,
-        categories
+        nullif(array_to_string(genres::array, ', '), '') as genres_text
 
     from games_latest
 

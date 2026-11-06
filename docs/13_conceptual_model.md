@@ -154,7 +154,7 @@ Counts are stored, percentages are not. A percentage is worked out from sums lat
 |---|---|---|---|
 | Identity | `steam_appid`, `name`, `type` | `stg_steam__games` | Latest row per game (this is what `int_steam__games_latest` will give). |
 | Release | `release_date`, `release_year`, `release_date_text` | `stg_steam__games` | `release_year` is worked out in dbt. NULL for unreleased games. |
-| Store info | `required_age`, `metacritic_score`, `website`, `short_description` | `stg_steam__games` | I have not checked whether `metacritic_score` changes between runs. If it does, it moves to the fact. |
+| Store info | `required_age`, `metacritic_score`, `website`, `short_description` | `stg_steam__games` | Checked on 2026-11-06 over 8 runs: `metacritic_score` did not change for any game, so it stays here ([doc 14](14_dbt_intermediate.md)). If it ever changes, it moves to the fact. |
 | Platforms | `platform_windows`, `platform_mac`, `platform_linux` | `stg_steam__games` | |
 | Lists | `developers`, `publishers`, `genres`, `categories` | `stg_steam__games` | Kept as lists. |
 | Readable text | `genres_text` | Built by dbt from `genres` | For example "Strategy, Simulation". |

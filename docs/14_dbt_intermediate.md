@@ -5,7 +5,7 @@
 The intermediate layer joins and shapes the five staging views. It holds the prep models and the star schema (`fact_game_snapshot`, `dim_game`, `dim_date`). All of it is built as **views** in `STEAM_DB.INTERMEDIATE` ([doc 13](13_conceptual_model.md), section 9).
 
 **Branch:** `feat/dbt-intermediate`
-**Status:** In progress. 2 of 5 models are built (`int_steam__games_latest`, `dim_date`). This document is extended after each model.
+**Status:** In progress. 3 of 5 models are built (`int_steam__games_latest`, `dim_date`, `dim_game`). This document is extended after each model.
 
 `Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate → dbt Marts → Streamlit`
 
@@ -19,7 +19,7 @@ There is no reference model to copy for this layer. The Flight-punctuality repo 
 |---|---|---|---|
 | 1 | `int_steam__games_latest` | one game | Built and tested (2026-11-06) |
 | 2 | `dim_date` | one Stockholm day that has a run | Built and tested (2026-11-06) |
-| 3 | `dim_game` | one game | Not built |
+| 3 | `dim_game` | one game | Built and tested (2026-11-06) |
 | 4 | `int_steam__game_run` | one game per run | Not built |
 | 5 | `fact_game_snapshot` | one game per run | Not built |
 
@@ -88,16 +88,55 @@ One row per Stockholm day that has a run. The days come from `select distinct co
 | `dbt build --select dim_date` | `Found 7 models, 41 data tests`. 1 view and 2 tests: `PASS=3 WARN=0 ERROR=0` |
 | Read-only query on `STEAM_DB.INTERMEDIATE.DIM_DATE` (CSV export, 2026-11-06) | 8 rows, one for each run day from 2026-10-23 to 2026-11-06. Weekdays and ISO weeks checked by hand against a calendar: for example 2026-10-23 is a Friday (5, week 43), 2026-11-02 a Monday (1, week 45). All run days are weekdays, so `is_weekend` is FALSE everywhere. |
 
-## 4. How to Run
+## 4. `dim_game`
+
+File: [`dim_game.sql`](../dbt_project/models/intermediate/dim_game.sql)
+
+One row per game, with the things that rarely change. It reads `int_steam__games_latest` (the newest row of each game).
+
+| Group | Columns |
+|---|---|
+| Identity | `steam_appid`, `name`, `type` |
+| Release | `release_date`, `release_year`, `release_date_text` |
+| Store info | `required_age`, `metacritic_score`, `website`, `short_description` |
+| Platforms | `platform_windows`, `platform_mac`, `platform_linux` |
+| Lists | `developers`, `publishers`, `genres`, `categories` (stay lists) |
+| Readable text | `genres_text` |
+
+Worked out here: `release_year = year(release_date)` (NULL for unreleased games) and `genres_text = nullif(array_to_string(genres::array, ', '), '')`. The price and status columns (`price_*`, `discount_percent`, `is_free`, `coming_soon`) and `recommendations_total` are not in `dim_game`. The fact owns them.
+
+### Findings
+
+| Finding | Evidence |
+|---|---|
+| Six candidate columns do not change between runs | Read-only query on `STG_STEAM__GAMES` (screenshot of the result, 2026-11-06): 0 of 81 games changed `name`, `release_date_text`, `required_age`, `metacritic_score`, `website` or `genres` over the 8 runs. This is only about two weeks of history. |
+| Genre items are plain text | `genres` looks like `["Indie", "Simulation", "Strategy"]` and `typeof(genres[0])` is `VARCHAR` (3 rows seen) |
+| 45 of 81 games have a Metacritic score | Scores run from 45 to 91. The other 36 are NULL. |
+
+### Tests
+
+| Model | Tests |
+|---|---|
+| `dim_game` | `steam_appid`: `unique` and `not_null`. `release_year`, `metacritic_score` and `genres_text` have a description only. |
+
+### Validation
+
+| Check | Result |
+|---|---|
+| `dbt build --select dim_game` | `Found 8 models, 43 data tests`. 1 view and 2 tests: `PASS=3 WARN=0 ERROR=0` |
+| Counts on `STEAM_DB.INTERMEDIATE.DIM_GAME` (screenshot, 2026-11-06) | 81 rows, 81 games, 77 with `release_year`, 81 with `genres_text`, 45 with `metacritic_score` |
+| First 8 rows by release year | The 4 games without a year have "To be announced" or "Coming soon" as text (Afterworld, Guardians of the Wild Sky, LEGO Skylines, Prison Architect 2). The next four are the oldest games and their years match the text (2008 and 2009). `genres_text` reads like `Simulation, Strategy`. |
+
+## 5. How to Run
 
 From the `dbt_project/` folder, with the virtual environment active:
 
 ```bash
 set -a; source ../.env; set +a
-dbt build --select int_steam__games_latest dim_date
+dbt build --select int_steam__games_latest dim_date dim_game
 ```
 
-## 5. Decisions
+## 6. Decisions
 
 | Decision | Reason |
 |---|---|
@@ -106,15 +145,17 @@ dbt build --select int_steam__games_latest dim_date
 | Unreleased games are kept | `coming_soon` tells them apart. Zero reviews or `result = 42` never mean "unreleased". |
 | `dim_date` holds only days that have a run, no `date_spine` | No start date or end date to keep up. The list stops growing when ingestion stops. A fact row always finds its day, so the `relationships` test cannot fail on a date. The first plan used `dbt_utils.date_spine` (suggested in the handoff, not copied from a reference repo). It needs an end date and builds empty days that nothing uses. |
 | `day_of_week` and `week_of_year` use the ISO rules | They do not depend on a Snowflake setting |
+| A missing `metacritic_score` stays NULL in `dim_game` | A number column cannot hold text, and NULL means "no data", never 0. The words "no Metacritic data available" are a display choice for the mart or Streamlit. |
+| `genres_text` gives NULL for an empty list | `nullif(..., '')`, so "no genres" is not an empty text |
 
 **Limit of `dim_date`:** days without a run have no row. This is fine because the dashboard shows markers per run, not a line over gaps ([doc 13](13_conceptual_model.md), section 8). If empty days are needed later, switch to `date_spine`. No column changes.
 
-## 6. Not done yet
+## 7. Not done yet
 
 | Item | Status |
 |---|---|
-| `dim_game`, `int_steam__game_run`, `fact_game_snapshot` | Next, in this order |
-| `metacritic_score` may change between runs | Not checked. Check before building `dim_game`. If it changes, it moves from `dim_game` to the fact. |
+| `int_steam__game_run`, `fact_game_snapshot` | Next, in this order |
+| `metacritic_score` may change between runs | **Checked on 2026-11-06** (read-only query on `STG_STEAM__GAMES`, 8 runs, screenshot of the result). 0 of 81 games changed `name`, `release_date_text`, `required_age`, `metacritic_score`, `website` or `genres`. So they stay in `dim_game`. Only 8 runs over about two weeks, so this is not proof for later. |
 | Completeness test (81 games per run, `severity: warn`) | Planned for `int_steam__game_run` |
 | Recent reviews never above all-time reviews (`warn`) | Planned for `int_steam__game_run`, needs a join |
 | A failed run (a `load_id` missing in one table) and two runs in one day | Not tested |

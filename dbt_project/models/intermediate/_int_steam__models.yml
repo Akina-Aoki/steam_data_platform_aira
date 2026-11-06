@@ -28,3 +28,25 @@ models:
         data_tests:
           - unique        # Fail if a day appears twice, so the list is wrong.
           - not_null      # Fail if a row has no day.
+
+
+  - name: dim_game
+    description: >
+      One row per game, with the things that rarely change (name, release,
+      store info, platforms, lists). Built from the newest row of each game.
+      Price and status are not here, they live in the fact table.
+      The four lists (developers, publishers, genres, categories) stay lists.
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game. One row per game, so it is the key.
+        data_tests:
+          - unique        # Fail if a game appears twice, so the star would count it twice.
+          - not_null      # Fail if a row has no game id.
+
+      - name: release_year
+        description: Year of the release date. NULL for unreleased games.
+      - name: metacritic_score
+        description: Metacritic critic score, 0 to 100. NULL when Steam shows no score, never 0.
+      - name: genres_text
+        description: Genres as readable text, for example Indie, Simulation, Strategy.

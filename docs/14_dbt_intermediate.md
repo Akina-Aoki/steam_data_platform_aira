@@ -4,8 +4,8 @@
 
 The intermediate layer joins and shapes the five staging views. It holds the prep models and the star schema (`fact_game_snapshot`, `dim_game`, `dim_date`). All of it is built as **views** in `STEAM_DB.INTERMEDIATE` ([doc 13](13_conceptual_model.md), section 9).
 
-**Branch:** `feat/dbt-intermediate`
-**Status:** In progress. 3 of 5 models are built (`int_steam__games_latest`, `dim_date`, `dim_game`). This document is extended after each model.
+**Branch:** `feat/one-fact-table` (the first three models were built on `feat/dbt-intermediate`)
+**Status:** The four models are built and tested (`int_steam__games_latest`, `dim_date`, `dim_game`, `fact_game_snapshot`). The whole-project `dbt build` gave `PASS=60 WARN=0 ERROR=0` on 2026-11-16. History: on 2026-11-06 the single fact was split into three after a tip from my teacher (the commit `71eed57`, still on `main`). On 2026-11-16 I went back to one fact. The marts are not built yet.
 
 `Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate → dbt Marts → Streamlit`
 
@@ -20,8 +20,9 @@ There is no reference model to copy for this layer. The Flight-punctuality repo 
 | 1 | `int_steam__games_latest` | one game | Built and tested (2026-11-06) |
 | 2 | `dim_date` | one Stockholm day that has a run | Built and tested (2026-11-06) |
 | 3 | `dim_game` | one game | Built and tested (2026-11-06) |
-| 4 | `int_steam__game_run` | one game per run | Not built |
-| 5 | `fact_game_snapshot` | one game per run | Not built |
+| 4 | `fact_game_snapshot` | one game per run | Built and tested (2026-11-16) |
+
+`int_steam__game_run` (a four-way join in front of the fact) was planned and **dropped**. It was never built. The joins are inside `fact_game_snapshot`.
 
 Descriptions and tests are in [`_int_steam__models.yml`](../dbt_project/models/intermediate/_int_steam__models.yml).
 
@@ -98,10 +99,11 @@ One row per game, with the things that rarely change. It reads `int_steam__games
 |---|---|
 | Identity | `steam_appid`, `name`, `type` |
 | Release | `release_date`, `release_year`, `release_date_text` |
-| Store info | `required_age`, `metacritic_score`, `website`, `short_description` |
-| Platforms | `platform_windows`, `platform_mac`, `platform_linux` |
+| Store info | `metacritic_score`, `website`, `short_description` |
 | Lists | `developers`, `publishers`, `genres`, `categories` (stay lists) |
 | Readable text | `genres_text` |
+
+That is 14 columns. **Dropped on 2026-11-16:** `required_age`, `platform_windows`, `platform_mac` and `platform_linux`. No business area in [doc 13](13_conceptual_model.md) needs them. A column can be added back with one line in `dim_game.sql`.
 
 Worked out here: `release_year = year(release_date)` (NULL for unreleased games) and `genres_text = nullif(array_to_string(genres::array, ', '), '')`. The price and status columns (`price_*`, `discount_percent`, `is_free`, `coming_soon`) and `recommendations_total` are not in `dim_game`. The fact owns them.
 
@@ -126,17 +128,70 @@ Worked out here: `release_year = year(release_date)` (NULL for unreleased games)
 | `dbt build --select dim_game` | `Found 8 models, 43 data tests`. 1 view and 2 tests: `PASS=3 WARN=0 ERROR=0` |
 | Counts on `STEAM_DB.INTERMEDIATE.DIM_GAME` (screenshot, 2026-11-06) | 81 rows, 81 games, 77 with `release_year`, 81 with `genres_text`, 45 with `metacritic_score` |
 | First 8 rows by release year | The 4 games without a year have "To be announced" or "Coming soon" as text (Afterworld, Guardians of the Wild Sky, LEGO Skylines, Prison Architect 2). The next four are the oldest games and their years match the text (2008 and 2009). `genres_text` reads like `Simulation, Strategy`. |
+| `dbt build --select dim_game fact_game_snapshot` (2026-11-16, after the four columns were dropped) | `PASS=11 WARN=0 ERROR=0` for both models and their tests together. The row counts above are from 2026-11-06, before the cut. |
 
-## 5. How to Run
+## 5. `fact_game_snapshot`
+
+File: [`fact_game_snapshot.sql`](../dbt_project/models/intermediate/fact_game_snapshot.sql)
+
+One row per game per run: the store page, the reviews and the players together. It starts from `stg_steam__games` and uses three **left joins** (`stg_steam__review_summary`, `stg_steam__review_recent`, `stg_steam__player_counts`) on `steam_appid` + `load_id`. The base is `games` because it has a row in every run. The other tables started later, so the early runs keep their row and the missing values stay NULL. It stores counts only, never percentages.
+
+19 columns:
+
+| Group | Columns | Comes from |
+|---|---|---|
+| Keys | `steam_appid`, `load_id`, `snapshot_date` | `stg_steam__games` (`collected_date` is the Stockholm day) |
+| Time | `collected_at_utc`, `snapshot_hour_local` | `stg_steam__games`. The hour is `hour(convert_timezone('UTC', 'Europe/Stockholm', collected_at_utc))`. |
+| Store page | `price_currency`, `price_initial`, `price_final`, `discount_percent`, `is_free`, `coming_soon` | `stg_steam__games` |
+| Reviews, all time | `total_positive`, `total_negative`, `counts_all_languages` | `stg_steam__review_summary` |
+| Reviews, last 30 days | `recent_positive`, `recent_negative` | `stg_steam__review_recent`. NULL before 2026-11-02. |
+| Players | `player_count`, `has_player_data`, `collected_hour_local` | `stg_steam__player_counts`. NULL for the runs before 2026-10-27. |
+
+### Tests
+
+| Where | Test |
+|---|---|
+| Model | `dbt_utils.unique_combination_of_columns` on (`steam_appid`, `load_id`). It fails if a join multiplied rows. |
+| Model | `dbt_utils.expression_is_true`: recent reviews never above all-time reviews (`warn`, skips rows with no recent data and runs before 2026-11-02) |
+| `steam_appid` | `not_null` and `relationships` to `dim_game` |
+| `load_id` | `not_null` |
+| `snapshot_date` | `not_null` and `relationships` to `dim_date` |
+| `dbt_project/tests/assert_81_games_per_run.sql` | A singular test (`warn`): returns every run that does not have exactly 81 rows |
+
+That is 8 tests.
+
+### Validation
+
+| Check | Result |
+|---|---|
+| `dbt build --select dim_game fact_game_snapshot` (2026-11-16) | `PASS=11 WARN=0 ERROR=0` |
+| `dbt build --select fact_game_snapshot` after adding `snapshot_hour_local` and the 81-games test (2026-11-16) | `Found 9 models, 51 data tests`. 1 view and 8 tests: `PASS=9 WARN=0 ERROR=0` |
+| Whole project `dbt build` (2026-11-16) | `PASS=60 WARN=0 ERROR=0`: 9 view models and 51 tests |
+| Read-only query on `STEAM_DB.INTERMEDIATE.FACT_GAME_SNAPSHOT`, grouped by run (CSV export, 2026-11-16) | 10 runs, each with 81 games. Run hours, oldest first: 14, 12, 10, 15, 13, 14, 15, 9, 19, 9. |
+
+### Findings
+
+| Finding | Evidence |
+|---|---|
+| `snapshot_hour_local` is the hour the run **started**, not a delay | The newest run showed hour 9 while it was already 10 o'clock. A dlt `load_id` is the Unix time of the start. `1794818498` is 08:41 UTC, which is 09:41 Stockholm. The run ended at 10:02. This is my calculation from the `load_id` and the terminal log, not a Snowflake query. |
+| Each run has 81 games in the fact | The CSV above, and `assert_81_games_per_run` passed |
+
+## 6. How to Run
 
 From the `dbt_project/` folder, with the virtual environment active:
 
 ```bash
 set -a; source ../.env; set +a
-dbt build --select int_steam__games_latest dim_date dim_game
+dbt build --select int_steam__games_latest dim_date dim_game fact_game_snapshot
 ```
 
-## 6. Decisions
+Or the whole project, which also runs the staging models:
+
+```bash
+dbt build
+```
+
+## 7. Decisions
 
 | Decision | Reason |
 |---|---|
@@ -147,15 +202,22 @@ dbt build --select int_steam__games_latest dim_date dim_game
 | `day_of_week` and `week_of_year` use the ISO rules | They do not depend on a Snowflake setting |
 | A missing `metacritic_score` stays NULL in `dim_game` | A number column cannot hold text, and NULL means "no data", never 0. The words "no Metacritic data available" are a display choice for the mart or Streamlit. |
 | `genres_text` gives NULL for an empty list | `nullif(..., '')`, so "no genres" is not an empty text |
+| One fact table, `fact_game_snapshot`. The three-fact version of 2026-11-06 is not used. | One table is simpler to read, and the mart needs no join between facts. The fact keeps the early runs by starting from `games` with left joins. See [doc 13](13_conceptual_model.md), section 9. |
+| No `int_steam__game_run` | The joins are inside the fact. A second model with the same columns would only have to be kept in sync. |
+| The run hour (`snapshot_hour_local`) is worked out in the fact from the `games` time | `games` has a row in every run. The hour in `collected_hour_local` comes from the player counts, so it is NULL for early runs and it is the hour of the count, not of the run. |
+| `discount_percent` stays in the fact | It is Steam's own number, taken from `stg_steam__games`. The marts can check it against the two prices. |
+| No `dim_hour` table | The dashboard filters by hour on `snapshot_hour_local`. `dim_date` stays one row per day. |
 
 **Limit of `dim_date`:** days without a run have no row. This is fine because the dashboard shows markers per run, not a line over gaps ([doc 13](13_conceptual_model.md), section 8). If empty days are needed later, switch to `date_spine`. No column changes.
 
-## 7. Not done yet
+## 8. Not done yet
 
 | Item | Status |
 |---|---|
-| `int_steam__game_run`, `fact_game_snapshot` | Next, in this order |
+| The marts (`mart_game_detail`, `mart_genre_comparison`) | Not built. Two things are decided first: what the "change" columns compare with, and whether the genre mart is per day or per run ([doc 15](15_hourly_runs_plan.md), D1 and D2). |
+| Hourly runs | The hand-run test is in progress ([doc 15](15_hourly_runs_plan.md)). Dagster comes later. |
+| The three old views `FACT_GAME_STORE`, `FACT_GAME_REVIEWS` and `FACT_GAME_PLAYERS` | Still in `STEAM_DB.INTERMEDIATE` from the build on 2026-11-06. dbt does not drop models that were removed. Optional to drop. |
 | `metacritic_score` may change between runs | **Checked on 2026-11-06** (read-only query on `STG_STEAM__GAMES`, 8 runs, screenshot of the result). 0 of 81 games changed `name`, `release_date_text`, `required_age`, `metacritic_score`, `website` or `genres`. So they stay in `dim_game`. Only 8 runs over about two weeks, so this is not proof for later. |
-| Completeness test (81 games per run, `severity: warn`) | Planned for `int_steam__game_run` |
-| Recent reviews never above all-time reviews (`warn`) | Planned for `int_steam__game_run`, needs a join |
-| A failed run (a `load_id` missing in one table) and two runs in one day | Not tested |
+| Completeness test (81 games per run, `severity: warn`) | **Done on 2026-11-16**, `assert_81_games_per_run` passes |
+| Recent reviews never above all-time reviews (`warn`) | **Done on 2026-11-16**, a test on `fact_game_snapshot`, passes |
+| A failed run (a `load_id` missing in one table) and two runs in one day | Not tested. The hourly hand-run test will show it. |

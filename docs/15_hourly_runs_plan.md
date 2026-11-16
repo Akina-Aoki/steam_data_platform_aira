@@ -79,7 +79,7 @@ Do these in order. Each row is a small step. Mark the Status column as we go.
 | B1 | No code change. Check `run_steam_pipeline()` is the one function Dagster will call. It returns `LoadInfo`. After it, Dagster must call `load_info.raise_on_failed_jobs()` like `pipelines_steam.py` does, so a failed load shows as a failed Dagster run. | none | tiny | Not started |
 | B2 | Time one full run on this machine and write the number in this doc. A run must finish well before the next hour starts. About 21 minutes so far. | this doc | tiny | **Done 2026-11-16.** The run with `load_id` `1794818498.852425` started at 09:41 and finished at 10:02 (Stockholm time), so about 21 minutes. All four tables have 81 rows for it. |
 | B3 | **Hand-run test:** start the pipeline by hand at the same minute of 3 hours in a row. After each run, check in Snowflake that the new `load_id` has 81 rows in `games`, `review_summary`, `player_counts` and `review_recent`, and look in the log for any 429 line. | none, commands only | small | **In progress.** Run 1 of 3 is done (started 09:41, `load_id` `1794818498.852425`, 81 rows in all four tables, no error). Runs 2 and 3 are due at 10:41 and 11:41. |
-| B4 | After the 3 runs: `dbt build` for the whole project, and check that every test passes, that `fact_game_snapshot` has 3 new runs of 81 rows, and that no `unique` test fails. | none | tiny | Not started |
+| B4 | After the 3 runs: `dbt build` for the whole project, and check that every test passes, that `fact_game_snapshot` has 3 new runs of 81 rows, and that no `unique` test fails. | none | tiny | **Partly done 2026-11-16.** The whole-project `dbt build` already passed on the current data (`PASS=60 WARN=0 ERROR=0`: 9 models, 51 tests). It still has to be repeated after the hourly runs (B3). |
 
 ### C. Dagster (the scheduler): postponed
 
@@ -120,9 +120,9 @@ Only after the code step they describe is done. These docs say "once a day" or "
 | [01](01_infra_setup.md) | "Apache Airflow running inside Docker". Now Dagster. |
 | [13](13_conceptual_model.md) | Section 6.4 and 9 for the one fact and the removed platform columns. Section 7 (history). Section 8 "Gaps in the date axis" and "Player counts depend on the hour". Section 10 "Airflow as Stage 2". |
 | [14](14_dbt_intermediate.md) | The model list: `int_steam__game_run` is dropped, the fact is `fact_game_snapshot`. |
-| `logical_model.dbml` and `assets/logical_model_1.png` | **Still the old version** (checked 2026-11-16). `dim_game` still has `required_age` and the three `platform_*` columns. The fact has no `snapshot_hour_local`. The png is redrawn on dbdiagram.io. |
+| `logical_model.dbml` and `assets/logical_model_1.png` | The new dbml (the two dimensions and the one fact, no marts) was written on 2026-11-16 and has to be pasted into the file. Then the png is redrawn on dbdiagram.io. The repo files were still the old version when this was checked. |
 | `_int_steam__models.yml` | The `dim_game` description still says "store info, platforms, lists". Change it to "store info, lists". Text only. |
-| [13](13_conceptual_model.md) and [14](14_dbt_intermediate.md) | Still list `required_age` and the platforms in `dim_game` (doc 13 section 6.4, doc 14 sections 1 and 4), and doc 14 still shows `int_steam__game_run` as "Not built" (lines 23, 157, 159 and 160). Doc 14 says `fact_game_snapshot` is "Not built", but it is built. The history numbers say 8 runs, now 10. |
+| [13](13_conceptual_model.md) and [14](14_dbt_intermediate.md) | **Done 2026-11-16.** Both now describe the one fact, the 14 columns of `dim_game`, `snapshot_hour_local`, 10 runs and the hourly plan. Doc 14 has a new section for `fact_game_snapshot`, so its later sections moved from 5, 6, 7 to 6, 7, 8. The caption of the picture in doc 13 is updated, but the png itself still has to be redrawn. |
 
 ## 6. Things to remember
 

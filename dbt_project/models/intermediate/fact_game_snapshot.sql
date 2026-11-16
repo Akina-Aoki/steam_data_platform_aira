@@ -39,6 +39,9 @@ joined as (
         games.collected_date as snapshot_date,
 
         games.collected_at_utc,
+        -- The Stockholm hour (0 to 23) of the run. It comes from games, which has a row in every run.
+        hour(convert_timezone('UTC', 'Europe/Stockholm',
+        games.collected_at_utc)) as snapshot_hour_local,
 
         -- Store page. NULL price means no price, never 0.
         games.price_currency,

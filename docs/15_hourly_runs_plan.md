@@ -52,9 +52,9 @@ Do these in order. Each row is a small step. Mark the Status column as we go.
 
 | # | What | Files | Size | Status |
 |---|---|---|---|---|
-| A1 | Build and test `dim_game` and `fact_game_snapshot`. I run `dbt build --select dim_game fact_game_snapshot` and paste the output. | none | tiny | Not started |
-| A2 | Add the run hour to the fact: `snapshot_hour_local`, the Stockholm hour of the run, taken from `games.collected_at_utc`. The old `collected_hour_local` column comes from the player count (NULL for early runs), so it cannot be used as the run hour. | `fact_game_snapshot.sql`, its yml block | 2 lines | Not started |
-| A3 | Re-create the completeness test `assert_81_games_per_run.sql` for the one fact (`warn`: every `load_id` must have exactly 81 rows). | `dbt_project/tests/` | 1 file | Not started |
+| A1 | Build and test `dim_game` and `fact_game_snapshot`. I run `dbt build --select dim_game fact_game_snapshot` and paste the output. | none | tiny | **Done 2026-11-16.** `dbt build --select dim_game fact_game_snapshot` gave `PASS=11 WARN=0 ERROR=0`. |
+| A2 | Add the run hour to the fact: `snapshot_hour_local`, the Stockholm hour of the run, taken from `games.collected_at_utc`. The old `collected_hour_local` column comes from the player count (NULL for early runs), so it cannot be used as the run hour. | `fact_game_snapshot.sql`, its yml block | 2 lines | **Done 2026-11-16**, built with `PASS=9 WARN=0 ERROR=0` |
+| A3 | Re-create the completeness test `assert_81_games_per_run.sql` for the one fact (`warn`: every `load_id` must have exactly 81 rows). | `dbt_project/tests/` | 1 file | **Done 2026-11-16**, passed (no run has a number of games other than 81) |
 | A4 | Drop the three old views from Snowflake (`FACT_GAME_STORE`, `FACT_GAME_REVIEWS`, `FACT_GAME_PLAYERS`) in `STEAM_DB.INTERMEDIATE`. dbt does not drop models that were removed. Optional, they do no harm. | Snowflake | tiny | Not started |
 
 ### B. Ingestion

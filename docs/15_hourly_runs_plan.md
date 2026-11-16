@@ -1,8 +1,20 @@
 # Plan: One Full Run Every Hour, Scheduled with Dagster
 
-**Status:** Written on 2026-11-16. Nothing in this plan is built yet. Branch: `feat/one-fact-table`.
+**Status:** Written on 2026-11-16 and updated the same day. Section A (the one-fact model) and step B2 are done. The hand-run test (B3 and B4) is in progress. Dagster (section C) is postponed. Branch: `feat/one-fact-table`.
 
-**For an agent reading this:** read sections 1 to 3 first, then work through section 4 one row at a time, in order. The Status column says where we are. The user runs every terminal command; you show code or edit repo files only when the user says so for that step. Keep changes to the bare minimum (section 3 lists what must **not** change).
+**For an agent reading this:** read sections 1 to 3 first, then work through section 4 one row at a time, in order. The Status column says where we are. Keep changes to the bare minimum (section 3 lists what must **not** change).
+
+**How to work with me (the user is a beginner data engineer and a student):**
+
+- I run **every** terminal command myself, including read-only ones like `ls` and `git status`. Ask me and I paste the output. Do not run them.
+- Show code in chat and I paste it into the files. Edit only markdown in `docs/`, and only when I ask. Give whole files for YAML and the dbml.
+- Never open `.env`, `.dlt/secrets.toml` or key files. Do not change Snowflake (drop views, grants) without asking me first. Never use DuckDB.
+- Do not push or open a PR unless I ask. `scratch/` is in `.gitignore`: do not commit it.
+- One small step per message, explained in plain words with an everyday comparison. Say what success looks like. When I say "wait" or "I don't get it", go simpler.
+- Be honest about what is verified and what is not. Give one recommendation, not a menu. Do not reopen decisions marked Agreed.
+- Commit messages need a body and the trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`. Remind me, I forget it.
+
+**Next steps, in order (as of 2026-11-16):** finish the hand-run test (B3: runs 2 and 3 at 10:41 and 11:41, B4: the full `dbt build`), fix the stale docs and the dbml (section 5), then decide the marts (section 4 D, and section 7). Dagster only after I say go.
 
 ## 1. The goal
 
@@ -14,6 +26,8 @@ My teacher said the dashboard will be more accurate if the pipeline runs every h
 | The scheduler is **Dagster**, not Airflow | Agreed 2026-11-16. **Postponed the same day.** | My choice. Airflow was only ever "future work" in the docs. For now we develop locally and I start the run by hand every hour. Dagster comes after the hourly runs are proven to work (section C). |
 | One fact table, `fact_game_snapshot`, plus `dim_game` and `dim_date` | Agreed 2026-11-16 | See [doc 13](13_conceptual_model.md). The three-fact version stays in `main` until this branch is merged. |
 
+| No `dim_hour` table, and no hour in `dim_date` | Agreed 2026-11-16 | The dashboard filters by hour with `snapshot_hour_local`, which the mart takes from the fact. `dim_date` stays one row per day. A "part of day" label (morning, afternoon, evening) can be one line of SQL in a mart later, if wanted. |
+
 **Why all 81 games in one run, and not a part per hour:** the fact table joins the four sources on `steam_appid` + `load_id`. That only works when all four tables come from the same complete run. A split run would break that join and the "81 games per run" check.
 
 ## 2. Where we are
@@ -21,11 +35,12 @@ My teacher said the dashboard will be more accurate if the pipeline runs every h
 | Item | State |
 |---|---|
 | `main` | Three fact tables (`fact_game_store`, `fact_game_reviews`, `fact_game_players`). Not touched. |
-| Branch `feat/one-fact-table` | Created from `main`. Commit `fccb3f8` reverted the three-fact commit `71eed57`. |
-| `dim_game.sql` | Edited by me: platform columns and `required_age` removed, `categories` kept. **Not built or tested yet.** |
-| `fact_game_snapshot.sql` and its block in `_int_steam__models.yml` | Created by me. **Not built or tested yet.** |
-| `dbt_project/tests/assert_81_games_per_run.sql` | Deleted by the revert. Needs to be re-created for the one fact. |
-| Ingestion (dlt) | Works. One run = 5 resources, 486 requests, about 21 minutes (measured 2026-11-02, [doc 08](08_steam_py_code_guide.md)). Run by hand so far, 8 runs. |
+| Branch `feat/one-fact-table` | Created from `main`. Commit `fccb3f8` reverted the three-fact commit `71eed57`. Later commits on the branch: the one-fact model, a commit that stopped tracking `scratch/` (it is now in `.gitignore`), and the A2/A3 work. Check `git log` for what is pushed. |
+| `dim_game.sql` | One row per game, 14 columns: `steam_appid`, `name`, `type`, `release_date`, `release_year`, `release_date_text`, `metacritic_score`, `website`, `short_description`, `developers`, `publishers`, `genres`, `genres_text`, `categories`. The three `platform_*` columns and `required_age` are removed. Built and tested. |
+| `fact_game_snapshot.sql` and its block in `_int_steam__models.yml` | Built and tested. One row per game per run, 17 columns, including `snapshot_hour_local`. |
+| `dbt_project/tests/assert_81_games_per_run.sql` | Re-created for the one fact. Passes. |
+| Data in `fact_game_snapshot` | 10 runs, 81 games each (checked 2026-11-16): 10-23, 10-26, 10-27, 10-30, 11-02, 11-03, 11-05, 11-06, 11-11 and 11-16. The 11-16 run (`load_id` `1794818498.852425`, run hour 9) is the first hourly-test run. |
+| Ingestion (dlt) | Works. One run = 5 resources, 486 requests, about 21 minutes (measured 2026-11-02 and again on 2026-11-16, [doc 08](08_steam_py_code_guide.md)). Run by hand. |
 | Scheduler | None. |
 | Marts | Not built. |
 
@@ -62,8 +77,8 @@ Do these in order. Each row is a small step. Mark the Status column as we go.
 | # | What | Files | Size | Status |
 |---|---|---|---|---|
 | B1 | No code change. Check `run_steam_pipeline()` is the one function Dagster will call. It returns `LoadInfo`. After it, Dagster must call `load_info.raise_on_failed_jobs()` like `pipelines_steam.py` does, so a failed load shows as a failed Dagster run. | none | tiny | Not started |
-| B2 | Time one full run on this machine and write the number in this doc. A run must finish well before the next hour starts. About 21 minutes so far. | this doc | tiny | Not started |
-| B3 | **Hand-run test:** start the pipeline by hand at the same minute of 3 hours in a row. After each run, check in Snowflake that the new `load_id` has 81 rows in `games`, `review_summary`, `player_counts` and `review_recent`, and look in the log for any 429 line. | none, commands only | small | Not started |
+| B2 | Time one full run on this machine and write the number in this doc. A run must finish well before the next hour starts. About 21 minutes so far. | this doc | tiny | **Done 2026-11-16.** The run with `load_id` `1794818498.852425` started at 09:41 and finished at 10:02 (Stockholm time), so about 21 minutes. All four tables have 81 rows for it. |
+| B3 | **Hand-run test:** start the pipeline by hand at the same minute of 3 hours in a row. After each run, check in Snowflake that the new `load_id` has 81 rows in `games`, `review_summary`, `player_counts` and `review_recent`, and look in the log for any 429 line. | none, commands only | small | **In progress.** Run 1 of 3 is done (started 09:41, `load_id` `1794818498.852425`, 81 rows in all four tables, no error). Runs 2 and 3 are due at 10:41 and 11:41. |
 | B4 | After the 3 runs: `dbt build` for the whole project, and check that every test passes, that `fact_game_snapshot` has 3 new runs of 81 rows, and that no `unique` test fails. | none | tiny | Not started |
 
 ### C. Dagster (the scheduler): postponed
@@ -105,7 +120,9 @@ Only after the code step they describe is done. These docs say "once a day" or "
 | [01](01_infra_setup.md) | "Apache Airflow running inside Docker". Now Dagster. |
 | [13](13_conceptual_model.md) | Section 6.4 and 9 for the one fact and the removed platform columns. Section 7 (history). Section 8 "Gaps in the date axis" and "Player counts depend on the hour". Section 10 "Airflow as Stage 2". |
 | [14](14_dbt_intermediate.md) | The model list: `int_steam__game_run` is dropped, the fact is `fact_game_snapshot`. |
-| `logical_model.dbml` and `assets/logical_model_1.png` | `dim_game` columns, and `snapshot_hour_local` in the fact. The png is redrawn on dbdiagram.io. |
+| `logical_model.dbml` and `assets/logical_model_1.png` | **Still the old version** (checked 2026-11-16). `dim_game` still has `required_age` and the three `platform_*` columns. The fact has no `snapshot_hour_local`. The png is redrawn on dbdiagram.io. |
+| `_int_steam__models.yml` | The `dim_game` description still says "store info, platforms, lists". Change it to "store info, lists". Text only. |
+| [13](13_conceptual_model.md) and [14](14_dbt_intermediate.md) | Still list `required_age` and the platforms in `dim_game` (doc 13 section 6.4, doc 14 sections 1 and 4), and doc 14 still shows `int_steam__game_run` as "Not built" (lines 23, 157, 159 and 160). Doc 14 says `fact_game_snapshot` is "Not built", but it is built. The history numbers say 8 runs, now 10. |
 
 ## 6. Things to remember
 
@@ -115,6 +132,7 @@ Only after the code step they describe is done. These docs say "once a day" or "
 | **Missed hours are normal** | Gaps will happen. Charts must not draw a straight line over a gap as if it were a trend. Use markers. |
 | **A failed run loads nothing** | If Steam answers 429 three times, the run stops before loading. There is no half run. That hour is simply missing. A single game that fails is skipped, so that run has fewer than 81 rows, and the 81-games test warns. |
 | **A run takes about 21 minutes** | The run hour comes from the `games` timestamp, taken at the start of the run, so start the schedule on the hour (cron `0 * * * *`). The player counts come up to about 20 minutes later. |
+| **What `snapshot_hour_local` means** | It is the Stockholm hour in which the run **started**. A dlt `load_id` is the Unix time of the start: `1794818498` is 08:41 UTC, which is 09:41 Stockholm, so the hour is 9 even though the run ended at 10:02. This is correct, not a one-hour delay (checked 2026-11-16). Start every run at the same minute. |
 | **Clock change** | `snapshot_hour_local` repeats once when the clocks go back in autumn. Use `collected_at_utc` for ordering. |
 | **Data grows 24 times faster** | About 2,000 rows per table per day (81 x 24). Fine for Snowflake. `achievements` has more rows per game. |
 | **Steam limits are not official** | No official limit exists for the Store endpoints ([doc 05](05_games__dlt_ingestion.md)). Watch the logs for 429 in the first days. If any appear, slow down before anything else. |

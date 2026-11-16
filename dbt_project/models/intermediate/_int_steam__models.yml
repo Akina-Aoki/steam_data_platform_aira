@@ -33,8 +33,7 @@ models:
   - name: dim_game
     description: >
       One row per game, with the things that rarely change (name, release,
-      store info, platforms, lists). Built from the newes
-      t row of each game.
+      store info, platforms, lists). Built from the newest row of each game.
       Price and status are not here, they live in the fact table.
       The four lists (developers, publishers, genres, categories) stay lists.
 
@@ -56,8 +55,8 @@ models:
   - name: fact_game_snapshot
     description: >
       One row per game per run: store page, reviews and players together.
-      Built from games with left joins, so runs before review_recent (2026-11-02)
-      and before player_counts (2026-10-27) keep their row with NULL in those columns.
+      Built from games with left joins, so runs before review_recent
+      and before player_counts keep their row with NULL in those columns.
       Counts only, percentages are worked out in the marts.
 
     data_tests:
@@ -102,7 +101,7 @@ models:
               arguments:
                 to: ref('dim_date')
                 field: date_day
-                
+
       - name: snapshot_hour_local
         description: The Stockholm hour (0 to 23) of the run. With snapshot_date it gives one point per hour. Repeats once when the clocks go back in autumn, so use collected_at_utc to order rows.
 

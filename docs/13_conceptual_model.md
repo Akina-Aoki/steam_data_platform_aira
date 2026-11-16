@@ -17,7 +17,8 @@ The grain says what **one row** of the fact table means. It is the most importan
 | Option | One row is | Problem |
 |---|---|---|
 | **Per run** *(agreed)* | one game in one collection run | None known |
-| Per day | one game on one day | Breaks the first time we run dlt twice on the same day |
+| Per day | one game on one day | Breaks as soon as dlt runs twice on the same day. With hourly runs it would break 24 times a day. |
+| Per hour | one game in one clock hour | Breaks when two runs fall in the same hour, and an hour with no run is a gap. A run is not tied to the clock: it starts at some minute and takes about 21 minutes. |
 
 **Why per run:** on 2026-11-05 a query on the staging views showed that each `load_id` is shared by all the tables loaded in that run, with exactly 81 rows per table. The newest two runs have it in all four tables. So `steam_appid` + `load_id` finds the matching row in each table. The date alone does not. A player count row has its own time, and a run takes 10 to 20 minutes. **Agreed on 2026-11-05:** the fact has one row per game per run, and all tables are joined on `steam_appid` + `load_id`, not on the date. A second run on the same day then becomes a second row, not a duplicate. This is also what makes **hourly runs** safe: every run adds one new row per game.
 

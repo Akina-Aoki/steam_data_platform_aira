@@ -37,7 +37,7 @@ My teacher said the dashboard will be more accurate if the pipeline runs every h
 | `main` | Three fact tables (`fact_game_store`, `fact_game_reviews`, `fact_game_players`). Not touched. |
 | Branch `feat/one-fact-table` | Created from `main`. Commit `fccb3f8` reverted the three-fact commit `71eed57`. Later commits on the branch: the one-fact model, a commit that stopped tracking `scratch/` (it is now in `.gitignore`), and the A2/A3 work. Check `git log` for what is pushed. |
 | `dim_game.sql` | One row per game, 14 columns: `steam_appid`, `name`, `type`, `release_date`, `release_year`, `release_date_text`, `metacritic_score`, `website`, `short_description`, `developers`, `publishers`, `genres`, `genres_text`, `categories`. The three `platform_*` columns and `required_age` are removed. Built and tested. |
-| `fact_game_snapshot.sql` and its block in `_int_steam__models.yml` | Built and tested. One row per game per run, 17 columns, including `snapshot_hour_local`. |
+| `fact_game_snapshot.sql` and its block in `_int_steam__models.yml` | Built and tested. One row per game per run, 19 columns, including `snapshot_hour_local`. |
 | `dbt_project/tests/assert_81_games_per_run.sql` | Re-created for the one fact. Passes. |
 | Data in `fact_game_snapshot` | 10 runs, 81 games each (checked 2026-11-16): 10-23, 10-26, 10-27, 10-30, 11-02, 11-03, 11-05, 11-06, 11-11 and 11-16. The 11-16 run (`load_id` `1794818498.852425`, run hour 9) is the first hourly-test run. |
 | Ingestion (dlt) | Works. One run = 5 resources, 486 requests, about 21 minutes (measured 2026-11-02 and again on 2026-11-16, [doc 08](08_steam_py_code_guide.md)). Run by hand. |

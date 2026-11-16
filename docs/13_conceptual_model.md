@@ -22,7 +22,7 @@ The grain says what **one row** of the fact table means. It is the most importan
 
 **Why per run:** on 2026-11-05 a query on the staging views showed that each `load_id` is shared by all the tables loaded in that run, with exactly 81 rows per table. The newest two runs have it in all four tables. So `steam_appid` + `load_id` finds the matching row in each table. The date alone does not. A player count row has its own time, and a run takes 10 to 20 minutes. **Agreed on 2026-11-05:** the fact has one row per game per run, and all tables are joined on `steam_appid` + `load_id`, not on the date. A second run on the same day then becomes a second row, not a duplicate. This is also what makes **hourly runs** safe: every run adds one new row per game.
 
-Not tested: a failed run, and two runs in one day. A warning test, `assert_81_games_per_run`, checks that each run has exactly 81 games in the fact. It passed on 2026-11-16 ([doc 14](14_dbt_intermediate.md)).
+Two runs in one day were tested on 2026-11-16: four runs that day gave four rows per game and no duplicate key. Not tested: a failed run. A warning test, `assert_81_games_per_run`, checks that each run has exactly 81 games in the fact. It passed on 2026-11-16 ([doc 14](14_dbt_intermediate.md)).
 
 ## 2. Business areas
 
@@ -31,7 +31,7 @@ This replaces the table in the project proposal. It matches what the data can re
 | # | Area | Business value: the question | Data used | Limits |
 |---|---|---|---|---|
 | 1 | **Portfolio overview** | How big is the catalogue? How does it split by genre, release year, price level, free or paid, released or coming soon? | `games` | Genre needs the genre mart. 81 hand-picked games, not all of Paradox. |
-| 2 | **Player engagement** | Which games have the most players now? How do player counts change from one run to the next? | `player_counts` | One moment per run, so the hour matters. 10 runs by 2026-11-16, and hourly runs are planned. No seasons, the history is too short. "No data" is not 0. |
+| 2 | **Player engagement** | Which games have the most players now? How do player counts change from one run to the next? | `player_counts` | One moment per run, so the hour matters. 13 runs by 2026-11-16 (the last three one hour apart), and hourly runs are planned. No seasons, the history is too short. "No data" is not 0. |
 | 3 | **Player sentiment** | How positive are the reviews of one game? How do the last 30 days compare with all time? | `review_summary`, `review_recent` | Before 2026-11-02 the totals count English reviews only. The review count is always shown next to the percent. No ranking of games by percent positive. |
 | 4 | **Pricing and discounts** | How do prices and discounts compare? Do games with a discount have different reviews or players? | `games`, reviews, players | We only see discounts that happen on our collection days. **Not checked yet** whether any exist. |
 | 5 | **Release lifecycle** | How do newer and older releases compare in sentiment and players? | `games` (release date), reviews, players | Release dates are parsed from text. Unreleased games are left out of comparisons. |
@@ -197,7 +197,7 @@ Not part of the star. It is the table Streamlit reads for one game, because the 
 
 ## 7. How much history do we have?
 
-Row counts per run, from a read-only query on the raw tables (CSV export, 2026-11-16). The first query on 2026-11-05 gave 6, 5, 4 and 2 runs and is out of date.
+Row counts per run, from a read-only query on the raw tables (CSV export, 2026-11-16, taken before the three hourly rounds of that day). The first query on 2026-11-05 gave 6, 5, 4 and 2 runs and is out of date.
 
 | Table | Runs | First run day | Rows per run |
 |---|---|---|---|
@@ -207,7 +207,7 @@ Row counts per run, from a read-only query on the raw tables (CSV export, 2026-1
 | `review_recent` | 6 | 2026-11-02 | 81 |
 | `achievements` | not in that query | | |
 
-The raw `games` table also has one old test row (Portal 2, `steam_appid` 620) with its own `load_id`. Staging removes it, so it is not a run. `fact_game_snapshot` has 10 runs with 81 games each (checked on 2026-11-16). The newest run, `1794818498.852425`, is the first one made for the hourly test.
+The raw `games` table also has one old test row (Portal 2, `steam_appid` 620) with its own `load_id`. Staging removes it, so it is not a run. `fact_game_snapshot` had 10 runs with 81 games each in that export. After the three hourly rounds (11:43, 12:43 and 13:45 on 2026-11-16) it has 13 runs and 1,053 rows, which is 13 x 81 (checked with SQL). Each of those three runs has 81 rows in all four raw tables. The run at 09:41, `1794818498.852425`, was the first one made for the hourly test.
 
 This is why `games` is the base of the fact table. The other tables are joined to it with a **left join**, so early runs are kept and the missing values stay NULL.
 
@@ -269,4 +269,4 @@ This is why `games` is the base of the fact table. The other tables are joined t
 | 3 | Build the intermediate models (all views): `int_steam__games_latest`, `dim_date`, `dim_game` and `fact_game_snapshot`. **Done on 2026-11-16**, the whole-project `dbt build` gave `PASS=60 WARN=0 ERROR=0`. |
 | 4 | Build the marts: `mart_genre_comparison` and `mart_game_detail` (one row per game per run, for the game page, no join between facts), because Streamlit reads `MARTS` only. Two things to decide first: what the "change" columns compare with, and whether the genre mart is per day or per run (D1 and D2 in [doc 15](15_hourly_runs_plan.md)). |
 | 5 | Write the doc for the intermediate layer. **Done**, see [doc 14](14_dbt_intermediate.md). |
-| 6 | Hourly runs by hand, then Dagster ([doc 15](15_hourly_runs_plan.md)). |
+| 6 | Hourly runs by hand: **done on 2026-11-16** (three runs in a row, [doc 15](15_hourly_runs_plan.md)). Dagster comes later. |

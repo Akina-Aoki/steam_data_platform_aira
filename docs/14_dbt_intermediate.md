@@ -5,7 +5,7 @@
 The intermediate layer joins and shapes the five staging views. It holds the prep models and the star schema (`fact_game_snapshot`, `dim_game`, `dim_date`). All of it is built as **views** in `STEAM_DB.INTERMEDIATE` ([doc 13](13_conceptual_model.md), section 9).
 
 **Branch:** `feat/one-fact-table` (the first three models were built on `feat/dbt-intermediate`)
-**Status:** The four models are built and tested (`int_steam__games_latest`, `dim_date`, `dim_game`, `fact_game_snapshot`). The whole-project `dbt build` gave `PASS=60 WARN=0 ERROR=0` on 2026-11-16. History: on 2026-11-06 the single fact was split into three after a tip from my teacher (the commit `71eed57`, still on `main`). On 2026-11-16 I went back to one fact. The marts are not built yet.
+**Status:** The four models are built and tested (`int_steam__games_latest`, `dim_date`, `dim_game`, `fact_game_snapshot`). The whole-project `dbt build` gave `PASS=60 WARN=0 ERROR=0` on 2026-11-16, and again with the same result after the three hourly rounds of that day. History: on 2026-11-06 the single fact was split into three after a tip from my teacher (the commit `71eed57`, still on `main`). On 2026-11-16 I went back to one fact. The marts are not built yet.
 
 `Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate → dbt Marts → Streamlit`
 
@@ -168,6 +168,7 @@ That is 8 tests.
 | `dbt build --select fact_game_snapshot` after adding `snapshot_hour_local` and the 81-games test (2026-11-16) | `Found 9 models, 51 data tests`. 1 view and 8 tests: `PASS=9 WARN=0 ERROR=0` |
 | Whole project `dbt build` (2026-11-16) | `PASS=60 WARN=0 ERROR=0`: 9 view models and 51 tests |
 | Read-only query on `STEAM_DB.INTERMEDIATE.FACT_GAME_SNAPSHOT`, grouped by run (CSV export, 2026-11-16) | 10 runs, each with 81 games. Run hours, oldest first: 14, 12, 10, 15, 13, 14, 15, 9, 19, 9. |
+| Same checks after the three hourly rounds (2026-11-16): SQL in `SQL/01_star_checks.ipynb`, and a whole-project `dbt build` | 13 runs, 1,053 rows (13 x 81), no duplicate key, no run without 81 games. The three new runs have the hours 11, 12 and 13. `dbt build` gave `PASS=60 WARN=0 ERROR=0` (I saw the last line only). |
 
 ### Findings
 
@@ -215,9 +216,10 @@ dbt build
 | Item | Status |
 |---|---|
 | The marts (`mart_game_detail`, `mart_genre_comparison`) | Not built. Two things are decided first: what the "change" columns compare with, and whether the genre mart is per day or per run ([doc 15](15_hourly_runs_plan.md), D1 and D2). |
-| Hourly runs | The hand-run test is in progress ([doc 15](15_hourly_runs_plan.md)). Dagster comes later. |
+| Hourly runs | The hand-run test is done: three runs in a row on 2026-11-16 ([doc 15](15_hourly_runs_plan.md)). Dagster comes later. |
 | The three old views `FACT_GAME_STORE`, `FACT_GAME_REVIEWS` and `FACT_GAME_PLAYERS` | Still in `STEAM_DB.INTERMEDIATE` from the build on 2026-11-06. dbt does not drop models that were removed. Optional to drop. |
 | `metacritic_score` may change between runs | **Checked on 2026-11-06** (read-only query on `STG_STEAM__GAMES`, 8 runs, screenshot of the result). 0 of 81 games changed `name`, `release_date_text`, `required_age`, `metacritic_score`, `website` or `genres`. So they stay in `dim_game`. Only 8 runs over about two weeks, so this is not proof for later. |
 | Completeness test (81 games per run, `severity: warn`) | **Done on 2026-11-16**, `assert_81_games_per_run` passes |
 | Recent reviews never above all-time reviews (`warn`) | **Done on 2026-11-16**, a test on `fact_game_snapshot`, passes |
-| A failed run (a `load_id` missing in one table) and two runs in one day | Not tested. The hourly hand-run test will show it. |
+| A failed run (a `load_id` missing in one table) | Not tested. |
+| Two runs in one day | **Tested on 2026-11-16.** Four runs that day (09:41, 11:43, 12:43 and 13:45). The fact has 13 runs and 1,053 rows in all, and no duplicate key. |

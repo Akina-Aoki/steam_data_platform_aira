@@ -30,13 +30,12 @@ models:
           - not_null      # Fail if a row has no day.
 
 
-
   - name: dim_game
     description: >
       One row per game, with the things that rarely change (name, release,
-      Metacritic score, website, short description, developers, genres).
-      Built from the newest row of each game. Price and status are not here,
-      they live in the fact tables. Developers and genres stay lists
+      store info, platforms, lists). Built from the newest row of each game.
+      Price and status are not here, they live in the fact table.
+      The four lists (developers, publishers, genres, categories) stay lists.
 
     columns:
       - name: steam_appid
@@ -53,112 +52,16 @@ models:
         description: Genres as readable text, for example Indie, Simulation, Strategy.
 
 
-  - name: fact_game_store
+  - name: fact_game_snapshot
     description: >
-      One row per game per run: what the Steam store page showed (price and status).
-      Reviews and players are in fact_game_reviews and fact_game_players.
+      One row per game per run: store page, reviews and players together.
+      Built from games with left joins, so runs before review_recent
+      and before player_counts keep their row with NULL in those columns.
+      Counts only, percentages are worked out in the marts.
 
     data_tests:
-      # The combination of game id and load id must be unique.
-      # This allows the same game to appear in different collection runs.
-      - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns:
-              - steam_appid
-              - load_id
-
-    columns:
-      - name: steam_appid
-        description: Steam id of the game.
-        data_tests:
-          - not_null      # Fail if a row has no game id.
-          # Every game in the fact must exist in dim_game, so the star has no orphans.
-          - relationships:
-              arguments:
-                to: ref('dim_game')
-                field: steam_appid
-
-      - name: load_id
-        description: The dlt load id, so which run the row came from.
-        data_tests:
-          - not_null      # Fail if a row does not know its run.
-
-      - name: snapshot_date
-        description: The Stockholm day of the run. Points to dim_date.date_day.
-        data_tests:
-          - not_null      # Fail if a row has no day.
-          # Every day in the fact must exist in dim_date.
-          - relationships:
-              arguments:
-                to: ref('dim_date')
-                field: date_day
-
-      - name: price_initial
-        description: Price before any discount, in euros. NULL means no price, never 0.
-      - name: price_final
-        description: Price after the discount, in euros. NULL means no price, never 0.
-      - name: is_free
-        description: True for a free game. A free game has no price, so this tells it apart from a missing price.
-      - name: coming_soon
-        description: True while the game is not released yet. Can change over time.
-
-
-  - name: fact_game_players
-    description: >
-      One row per game per run: how many players Steam reported at that moment.
-      Rows exist only for runs where player counts were collected.
-
-    data_tests:
-      # The combination of game id and load id must be unique.
-      - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns:
-              - steam_appid
-              - load_id
-
-    columns:
-      - name: steam_appid
-        description: Steam id of the game.
-        data_tests:
-          - not_null      # Fail if a row has no game id.
-          # Every game in the fact must exist in dim_game, so the star has no orphans.
-          - relationships:
-              arguments:
-                to: ref('dim_game')
-                field: steam_appid
-
-      - name: load_id
-        description: The dlt load id, so which run the row came from.
-        data_tests:
-          - not_null      # Fail if a row does not know its run.
-
-      - name: snapshot_date
-        description: The Stockholm day the player count was taken. Points to dim_date.date_day.
-        data_tests:
-          - not_null      # Fail if a row has no day.
-          # Every day in the fact must exist in dim_date.
-          # Each fact takes its own date, so this also catches a run that crossed midnight.
-          - relationships:
-              arguments:
-                to: ref('dim_date')
-                field: date_day
-
-      - name: collected_hour_local
-        description: Stockholm hour (0 to 23) when the count was taken. Player counts depend on the hour.
-      - name: player_count
-        description: Players at that moment. NULL means Steam has no data, 0 is a real zero.
-      - name: has_player_data
-        description: True when Steam sent a count (result 1), false when it had no data (result 42).
-
-
-  - name: fact_game_reviews
-    description: >
-      One row per game per run: review counts, all time and the last 30 days.
-      Rows exist for every run that has a review_summary row. The last-30-days
-      columns are NULL for runs before review_recent existed (before 2026-11-02).
-
-    data_tests:
-      # The combination of game id and load id must be unique.
+      # One game appears once per run. If a source had two rows for the same
+      # game and run, the joins would make duplicates and this test fails.
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:
@@ -166,9 +69,8 @@ models:
               - load_id
 
       # The last 30 days can never hold more reviews than all time.
-      # "warn" reports a problem without failing the test command.
-      # "where" skips runs with no recent data, and runs before 2026-11-02, when the
-      # all-time total counted English reviews only and could be smaller than the recent one.
+      # "where" skips runs with no recent data, and runs before 2026-11-02,
+      # when the all-time total counted English reviews only.
       - dbt_utils.expression_is_true:
           arguments:
             expression: "recent_positive + recent_negative <= total_positive + total_negative"
@@ -180,8 +82,7 @@ models:
       - name: steam_appid
         description: Steam id of the game.
         data_tests:
-          - not_null      # Fail if a row has no game id.
-          # Every game in the fact must exist in dim_game, so the star has no orphans.
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_game')
@@ -190,25 +91,29 @@ models:
       - name: load_id
         description: The dlt load id, so which run the row came from.
         data_tests:
-          - not_null      # Fail if a row does not know its run.
+          - not_null
 
       - name: snapshot_date
         description: The Stockholm day of the run. Points to dim_date.date_day.
         data_tests:
-          - not_null      # Fail if a row has no day.
-          # Every day in the fact must exist in dim_date.
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_date')
                 field: date_day
 
-      - name: total_positive
-        description: Positive reviews of all time. The total is positive + negative, so it is not stored.
-      - name: total_negative
-        description: Negative reviews of all time.
+      - name: snapshot_hour_local
+        description: The Stockholm hour (0 to 23) of the run. With snapshot_date it gives one point per hour. Repeats once when the clocks go back in autumn, so use collected_at_utc to order rows.
+
+      - name: price_initial
+        description: Price before any discount, in euros. NULL means no price, never 0.
+      - name: price_final
+        description: Price after the discount, in euros. NULL means no price, never 0.
+      - name: is_free
+        description: True for a free game. A free game has no price, so this tells it apart from a missing price.
+      - name: coming_soon
+        description: True while the game is not released yet. Can change over time.
       - name: counts_all_languages
-        description: False before 2026-11-02, when Steam counted English reviews only. Use it in every trend and change calculation.
-      - name: recent_positive
-        description: Positive reviews in the last 30 days. NULL before review_recent existed, a real 0 stays 0.
-      - name: recent_negative
-        description: Negative reviews in the last 30 days. NULL before review_recent existed, a real 0 stays 0.
+        description: False before 2026-11-02, when Steam counted English reviews only.
+      - name: player_count
+        description: Players at that moment. NULL means Steam has no data, 0 is a real zero.

@@ -23,7 +23,7 @@ Now:     private key file (outside the repo)  ->  dlt  ->  Snowflake
 | The page does not name dlt or the Python connector. That a password-only load from dlt would be blocked is **our reading**, not a statement from the page. | |
 | We do not know the date for our account. The last password-only load worked on 2026-10-27. | |
 
-**Decision:** switch to a key pair now, so a daily run does not fail with a login error later. A key pair is also what Airflow (future work) will need, because it cannot type a code.
+**Decision:** switch to a key pair now, so a scheduled run does not fail with a login error later. A key pair is also what Dagster (future work) will need, because it cannot type a code.
 
 **Why it is not in the reference repo:** the reference project logs in with a password from `.env`. We keep its structure (`connections.py` with `loader_credentials()`), and change only how the loader proves who it is.
 
@@ -59,7 +59,7 @@ Now:     private key file (outside the repo)  ->  dlt  ->  Snowflake
 | The password was not removed from the user | It is a fallback while we test, and it is easy to undo. Nothing in the project needs it any more. |
 | `DLT_USER` stays `PERSON`, not changed to `SERVICE` | Smallest change. Snowflake's docs say a `SERVICE` user cannot sign in with a password, and the type can be changed later with `ALTER USER ... SET TYPE`. We did not need it yet. |
 | `05_create_users.sql` has no `TYPE` line | The default type is `PERSON` (Snowflake's `CREATE USER` page), so the file now matches the real user and the reference project. |
-| No scheduler | The loader is run by hand, **once a day at most**. Airflow is future work. |
+| No scheduler | The loader is run by hand, **once an hour at most**. Dagster is future work ([doc 15](15_hourly_runs_plan.md)). |
 
 ## 5. Known Limits and Risks
 
@@ -76,11 +76,11 @@ Now:     private key file (outside the repo)  ->  dlt  ->  Snowflake
 - ~~Update the connect cell in notebooks 01 to 03 to use the key.~~ Done on 2026-10-30.
 - Decide later whether to remove the password from `DLT_USER`, or change it to `SERVICE`. Read Snowflake's docs first.
 - `DBT_USER` keeps the password for now. If Snowflake blocks passwords, repeat the steps in this doc for `DBT_USER`. Decide for `STREAMLIT_USER` when Streamlit is built.
-- Airflow: the same key and `loader_credentials()` can be used there.
+- Dagster: the same key and `loader_credentials()` can be used there.
 
 ## 7. How to Run
 
-Unchanged, once a day at most:
+Unchanged, once an hour at most:
 
 ```bash
 uv run --env-file .env python -m steam_data_platform.ingestion.pipelines_steam

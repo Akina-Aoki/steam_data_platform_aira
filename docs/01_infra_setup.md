@@ -77,4 +77,4 @@ The overall workflow will be:
 
 **Steam Data Source → Python + dlt → Snowflake Raw → dbt → Analytics Marts → Streamlit**
 
-Later, we'll use Apache Airflow running inside Docker to orchestrate the ingestion, transformation, and testing processes.
+Later, we'll use Dagster to schedule the ingestion. The plan is one full run every hour ([doc 15](15_hourly_runs_plan.md)). For now I start every run by hand. The dbt models are views, so dbt does not need a schedule yet.

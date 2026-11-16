@@ -102,8 +102,8 @@ Probed on 2026-10-27 with a small script (6 requests, 2 s apart). The script liv
 | Retry code | Use the shared `get_with_retry`, add an optional `accept_statuses` | See section 5. |
 | Column types | `player_count` and `result` set to `bigint`, `collected_at` to `timestamp` | A batch where every count is NULL would give dlt nothing to guess the type from. |
 | Request pace | 1 request every 2 s, one at a time, no `parallelized=True` | Steam publishes no limit, so we stay slow. dlt alternates between the three resources, so the whole run is about 243 requests and about 10 minutes. (With the two resources added on 2026-11-02 it is about 486 requests and about 21 minutes.) |
-| Time of day | Start the daily run at about the same clock time | A count depends on the hour. Comparing runs from different hours would mix time-of-day effects with real changes. This goes under limits in the thesis. |
-| Orchestration | No Airflow for now | About 243 requests per run. Later a scheduled script. |
+| Time of day | Start every run at about the same minute of the hour | Runs are one hour apart now ([doc 15](15_hourly_runs_plan.md)). A count depends on the hour, so the hour stays next to the count. A run takes about 21 minutes, so a count can come up to 20 minutes after the start. This goes under limits in the thesis. |
+| Orchestration | No scheduler for now. I start every run by hand. | About 243 requests per run (486 with the two resources added later). Later Dagster, one full run every hour. |
 
 ## 5. Code
 
@@ -173,7 +173,7 @@ uv run pytest -q
 
 ## 8. First Load and Validation
 
-**How to run** (once per day at most, because `append` adds rows on every run):
+**How to run** (once per hour at most, because `append` adds rows on every run):
 
 ```bash
 uv run --env-file .env python -m steam_data_platform.ingestion.pipelines_steam
@@ -219,7 +219,7 @@ These are proposals, to confirm when we build the staging models. The full table
 
 ## 10. Known Limits and Open Items
 
-- **One moment, not a daily number.** "Players right now" depends on the hour. A daily snapshot at a random time is a weak measure. More frequent snapshots are possible later but are out of scope.
+- **One moment, not a daily number.** "Players right now" depends on the hour. A snapshot at a random time is a weak measure. With one run every hour ([doc 15](15_hourly_runs_plan.md)) we get one moment per hour, which is better, but it is still not a daily total.
 - **Small games are noise.** For a game with 1 or 2 players, a difference says nothing.
 - **What 42 means:** unverified. We only know that Steam sent it together with a 404 and no count.
 - **Released game with no data:** not seen yet.

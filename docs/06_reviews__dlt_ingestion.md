@@ -72,7 +72,7 @@ Checked with real requests on 2026-10-26 (about 6 requests per probe, one game a
 | Pipeline | The same pipeline and source as `games` | `steam_source` returns both resources, so one run loads both tables. |
 | Retry code | New shared helper [`get_with_retry`](../src/steam_data_platform/ingestion/steam.py#L77-L128) | The retry logic should exist once. `fetch_app_details` used its own copy at first. Since the clean-up of 2026-10-30 it uses `get_with_retry` too. |
 | Pace | One request at a time, 2 s pause | Steam publishes no limit, so we stay slow. |
-| Orchestration | No Airflow for now | About 81 requests per resource per run. Later a scheduled script. |
+| Orchestration | No scheduler for now. I start every run by hand. | About 81 requests per resource per run. Later Dagster, one full run every hour ([doc 15](15_hourly_runs_plan.md)). |
 
 ## 4. Code
 
@@ -127,7 +127,7 @@ Important to know: if a run stops with an exception, dlt loads nothing from that
 
 ## 6. First Load and Validation
 
-**How to run** (once per day at most, because `append` adds rows on every run):
+**How to run** (once per hour at most, because `append` adds rows on every run):
 
 ```bash
 uv run --env-file .env python -m steam_data_platform.ingestion.pipelines_steam

@@ -59,7 +59,7 @@ Checked with real requests on 2026-10-23:
 | Prices | Keep Steam's integer minor units plus currency in raw | Raw is a faithful copy. dbt converts. |
 | Lists | `developers`, `publishers`, `genres`, `categories` stored as JSON (`VARIANT`) in one column | Avoids dlt child tables. dbt unpacks later. |
 | Fields | Keep a shortlist, not the whole response | The response is large (screenshots, movies, HTML). |
-| Orchestration | No Airflow for now | About 81 requests per run. Later a scheduled script. |
+| Orchestration | No scheduler for now. I start every run by hand. | About 81 requests per run. Later Dagster, one full run every hour ([doc 15](15_hourly_runs_plan.md)). |
 | Destination | Snowflake only, no DuckDB | Project infrastructure is Snowflake. |
 
 ## 4. Code
@@ -98,7 +98,7 @@ Important to know: if a run stops with an exception, dlt loads nothing from that
 
 ## 6. First Load and Validation
 
-**How to run** (once per day at most, because `append` adds rows on every run):
+**How to run** (once per hour at most, because `append` adds rows on every run):
 
 ```bash
 uv run --env-file .env python -m steam_data_platform.ingestion.pipelines_steam
@@ -136,7 +136,7 @@ These are proposals, to confirm when we build the staging models.
 - **Notebook:** sections 2, 8, 9 and 10 are run now (checked on the snapshot of 2026-10-23). All 81 rows have `type = game`. The 2 games without a price are *Majesty 2 Collection* and *Galaxy of Pen & Paper +1*; the reason is still unknown. Counts of messy-data cases are in section 10 of the notebook.
 - **Names:** only 12 of 81 were compared with my key. The rest rely on the publisher check.
 - **History:** `GAMES` now has four snapshots of the 81 games (2026-10-23, 10-26, 10-27 and 10-30). The notebook text describes the first snapshot only.
-- **Repeated runs:** each run adds 81 rows. Proposed rule: one scheduled run per day, and use the latest `collected_at` for current-state questions.
+- **Repeated runs:** each run adds 81 rows. Rule: one full run every hour ([doc 15](15_hourly_runs_plan.md)), and use the latest `collected_at` for current-state questions.
 - **Silent run:** fixed on 2026-10-30. The `games` resource now logs a progress line every 10 games.
 - **Login:** `DLT_USER` is a `PERSON` user with a password and **no MFA** (checked with `DESC USER` on 2026-10-30), which is why a password-only load worked. Snowflake is phasing out password-only sign-in for `PERSON` users, so the loader now logs in with a key pair (see [doc 09](09_key_pair_login.md)). `snowflake_setup/05_create_users.sql` has no `TYPE` line now, so it matches the real user.
 - **Tests:** [`tests/test_steam_dlt.py`](../tests/test_steam_dlt.py) uses fake Steam answers (`monkeypatch`, no network, no Snowflake). Four tests cover `fetch_app_details`. The `games` progress line has no test, because it is only a log message.

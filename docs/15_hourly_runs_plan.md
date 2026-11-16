@@ -1,6 +1,6 @@
 # Plan: One Full Run Every Hour, Scheduled with Dagster
 
-**Status:** Written on 2026-11-16 and updated the same day. Section A (the one-fact model) and step B2 are done. The hand-run test (B3 and B4) is in progress. Dagster (section C) is postponed. Branch: `feat/one-fact-table`.
+**Status:** Written on 2026-11-16 and updated the same day. Section A (the one-fact model, including A4, the three old views dropped) and step B2 are done. The hand-run test (B3 and B4) is in progress. Dagster (section C) is postponed. Branch: `feat/one-fact-table`.
 
 **For an agent reading this:** read sections 1 to 3 first, then work through section 4 one row at a time, in order. The Status column says where we are. Keep changes to the bare minimum (section 3 lists what must **not** change).
 
@@ -14,7 +14,7 @@
 - Be honest about what is verified and what is not. Give one recommendation, not a menu. Do not reopen decisions marked Agreed.
 - Commit messages need a body and the trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`. Remind me, I forget it.
 
-**Next steps, in order (as of 2026-11-16):** finish the hand-run test (B3: runs 2 and 3 at 10:41 and 11:41, B4: the full `dbt build`), fix the stale docs and the dbml (section 5), then decide the marts (section 4 D, and section 7). Dagster only after I say go.
+**Next steps, in order (as of 2026-11-16):** finish the hand-run test (B3: run 2 was at 11:43, so the three runs in a row are 11:43, 12:43 and 13:43, B4: the full `dbt build`), fix the stale docs and redraw the png (section 5), then decide the marts (section 4 D, and section 7). Dagster only after I say go.
 
 ## 1. The goal
 
@@ -25,7 +25,6 @@ My teacher said the dashboard will be more accurate if the pipeline runs every h
 | Every hour, run the **full** pipeline for **all 81 games**, all five tables | Agreed 2026-11-16 | The dashboard shows one point per hour. It does not split the games across the hours. |
 | The scheduler is **Dagster**, not Airflow | Agreed 2026-11-16. **Postponed the same day.** | My choice. Airflow was only ever "future work" in the docs. For now we develop locally and I start the run by hand every hour. Dagster comes after the hourly runs are proven to work (section C). |
 | One fact table, `fact_game_snapshot`, plus `dim_game` and `dim_date` | Agreed 2026-11-16 | See [doc 13](13_conceptual_model.md). The three-fact version stays in `main` until this branch is merged. |
-
 | No `dim_hour` table, and no hour in `dim_date` | Agreed 2026-11-16 | The dashboard filters by hour with `snapshot_hour_local`, which the mart takes from the fact. `dim_date` stays one row per day. A "part of day" label (morning, afternoon, evening) can be one line of SQL in a mart later, if wanted. |
 
 **Why all 81 games in one run, and not a part per hour:** the fact table joins the four sources on `steam_appid` + `load_id`. That only works when all four tables come from the same complete run. A split run would break that join and the "81 games per run" check.
@@ -70,7 +69,7 @@ Do these in order. Each row is a small step. Mark the Status column as we go.
 | A1 | Build and test `dim_game` and `fact_game_snapshot`. I run `dbt build --select dim_game fact_game_snapshot` and paste the output. | none | tiny | **Done 2026-11-16.** `dbt build --select dim_game fact_game_snapshot` gave `PASS=11 WARN=0 ERROR=0`. |
 | A2 | Add the run hour to the fact: `snapshot_hour_local`, the Stockholm hour of the run, taken from `games.collected_at_utc`. The old `collected_hour_local` column comes from the player count (NULL for early runs), so it cannot be used as the run hour. | `fact_game_snapshot.sql`, its yml block | 2 lines | **Done 2026-11-16**, built with `PASS=9 WARN=0 ERROR=0` |
 | A3 | Re-create the completeness test `assert_81_games_per_run.sql` for the one fact (`warn`: every `load_id` must have exactly 81 rows). | `dbt_project/tests/` | 1 file | **Done 2026-11-16**, passed (no run has a number of games other than 81) |
-| A4 | Drop the three old views from Snowflake (`FACT_GAME_STORE`, `FACT_GAME_REVIEWS`, `FACT_GAME_PLAYERS`) in `STEAM_DB.INTERMEDIATE`. dbt does not drop models that were removed. Optional, they do no harm. | Snowflake | tiny | Not started |
+| A4 | Drop the three old views from Snowflake (`FACT_GAME_STORE`, `FACT_GAME_REVIEWS`, `FACT_GAME_PLAYERS`) in `STEAM_DB.INTERMEDIATE`. dbt does not drop models that were removed. Optional, they do no harm. | Snowflake | tiny | **Done 2026-11-16.** I dropped the three views as `STEAM_TRANSFORMER`. A second `show views in schema STEAM_DB.INTERMEDIATE` (CSV export) shows only the 4 current views: `DIM_DATE`, `DIM_GAME`, `FACT_GAME_SNAPSHOT`, `INT_STEAM__GAMES_LATEST`. |
 
 ### B. Ingestion
 
@@ -78,7 +77,7 @@ Do these in order. Each row is a small step. Mark the Status column as we go.
 |---|---|---|---|---|
 | B1 | No code change. Check `run_steam_pipeline()` is the one function Dagster will call. It returns `LoadInfo`. After it, Dagster must call `load_info.raise_on_failed_jobs()` like `pipelines_steam.py` does, so a failed load shows as a failed Dagster run. | none | tiny | Not started |
 | B2 | Time one full run on this machine and write the number in this doc. A run must finish well before the next hour starts. About 21 minutes so far. | this doc | tiny | **Done 2026-11-16.** The run with `load_id` `1794818498.852425` started at 09:41 and finished at 10:02 (Stockholm time), so about 21 minutes. All four tables have 81 rows for it. |
-| B3 | **Hand-run test:** start the pipeline by hand at the same minute of 3 hours in a row. After each run, check in Snowflake that the new `load_id` has 81 rows in `games`, `review_summary`, `player_counts` and `review_recent`, and look in the log for any 429 line. | none, commands only | small | **In progress.** Run 1 of 3 is done (started 09:41, `load_id` `1794818498.852425`, 81 rows in all four tables, no error). Runs 2 and 3 are due at 10:41 and 11:41. |
+| B3 | **Hand-run test:** start the pipeline by hand at the same minute of 3 hours in a row. After each run, check in Snowflake that the new `load_id` has 81 rows in `games`, `review_summary`, `player_counts` and `review_recent`, and look in the log for any 429 line. | none, commands only | small | **In progress.** Run 1 started 09:41 (`load_id` `1794818498.852425`, 81 rows in all four tables, no 429). Run 2 started 11:43 (`load_id` `1794825794.9216492`, 81 rows in all four tables, it ended at 12:04). The hour 10 was skipped, so runs 1 and 2 are not consecutive. The new test is three runs in a row at the same minute: 11:43 (done), 12:43 and 13:43. For run 2 the log end shows 0 failed and 0 skipped achievements, but I did not check the whole log for a 429. |
 | B4 | After the 3 runs: `dbt build` for the whole project, and check that every test passes, that `fact_game_snapshot` has 3 new runs of 81 rows, and that no `unique` test fails. | none | tiny | **Partly done 2026-11-16.** The whole-project `dbt build` already passed on the current data (`PASS=60 WARN=0 ERROR=0`: 9 models, 51 tests). It still has to be repeated after the hourly runs (B3). |
 
 ### C. Dagster (the scheduler): postponed
@@ -118,10 +117,8 @@ Only after the code step they describe is done. These docs say "once a day" or "
 | [05](05_games__dlt_ingestion.md), [06](06_reviews__dlt_ingestion.md), [07](07_player_counts__dlt_ingestion.md) | "How to run (once per day at most)" and the "one scheduled run per day" rules. Hourly now. |
 | [09](09_key_pair_login.md) | "Unchanged, once a day at most", and "Airflow (future work)". Now Dagster, hourly. |
 | [01](01_infra_setup.md) | "Apache Airflow running inside Docker". Now Dagster. |
-| [13](13_conceptual_model.md) | Section 6.4 and 9 for the one fact and the removed platform columns. Section 7 (history). Section 8 "Gaps in the date axis" and "Player counts depend on the hour". Section 10 "Airflow as Stage 2". |
-| [14](14_dbt_intermediate.md) | The model list: `int_steam__game_run` is dropped, the fact is `fact_game_snapshot`. |
-| `logical_model.dbml` and `assets/logical_model_1.png` | The new dbml (the two dimensions and the one fact, no marts) was written on 2026-11-16 and has to be pasted into the file. Then the png is redrawn on dbdiagram.io. The repo files were still the old version when this was checked. |
-| `_int_steam__models.yml` | The `dim_game` description still says "store info, platforms, lists". Change it to "store info, lists". Text only. |
+| `logical_model.dbml` and `assets/logical_model_1.png` | The dbml in the repo is already the new version (the two dimensions and the one fact, 14 `dim_game` columns, `snapshot_hour_local`, no marts). **Only the png is left:** redraw it on dbdiagram.io from that dbml. |
+| `_int_steam__models.yml` | **Done 2026-11-16, committed.** The `dim_game` description now says "store info, lists", and `dbt parse` ran with no error. |
 | [13](13_conceptual_model.md) and [14](14_dbt_intermediate.md) | **Done 2026-11-16.** Both now describe the one fact, the 14 columns of `dim_game`, `snapshot_hour_local`, 10 runs and the hourly plan. Doc 14 has a new section for `fact_game_snapshot`, so its later sections moved from 5, 6, 7 to 6, 7, 8. The caption of the picture in doc 13 is updated, but the png itself still has to be redrawn. |
 
 ## 6. Things to remember

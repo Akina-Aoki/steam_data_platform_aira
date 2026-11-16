@@ -50,3 +50,67 @@ models:
         description: Metacritic critic score, 0 to 100. NULL when Steam shows no score, never 0.
       - name: genres_text
         description: Genres as readable text, for example Indie, Simulation, Strategy.
+
+
+  - name: fact_game_snapshot
+    description: >
+      One row per game per run: store page, reviews and players together.
+      Built from games with left joins, so runs before review_recent (2026-11-02)
+      and before player_counts (2026-10-27) keep their row with NULL in those columns.
+      Counts only, percentages are worked out in the marts.
+
+    data_tests:
+      # One game appears once per run. If a source had two rows for the same
+      # game and run, the joins would make duplicates and this test fails.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - steam_appid
+              - load_id
+
+      # The last 30 days can never hold more reviews than all time.
+      # "where" skips runs with no recent data, and runs before 2026-11-02,
+      # when the all-time total counted English reviews only.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "recent_positive + recent_negative <= total_positive + total_negative"
+          config:
+            severity: warn
+            where: "recent_positive is not null and counts_all_languages"
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_game')
+                field: steam_appid
+
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: snapshot_date
+        description: The Stockholm day of the run. Points to dim_date.date_day.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+
+      - name: price_initial
+        description: Price before any discount, in euros. NULL means no price, never 0.
+      - name: price_final
+        description: Price after the discount, in euros. NULL means no price, never 0.
+      - name: is_free
+        description: True for a free game. A free game has no price, so this tells it apart from a missing price.
+      - name: coming_soon
+        description: True while the game is not released yet. Can change over time.
+      - name: counts_all_languages
+        description: False before 2026-11-02, when Steam counted English reviews only.
+      - name: player_count
+        description: Players at that moment. NULL means Steam has no data, 0 is a real zero.

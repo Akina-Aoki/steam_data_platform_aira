@@ -21,15 +21,10 @@ final as (
         year(release_date) as release_year,
         release_date_text,
 
-        required_age,
         -- NULL means Steam shows no Metacritic score. Never 0.
         metacritic_score,
         website,
         short_description,
-
-        platform_windows,
-        platform_mac,
-        platform_linux,
 
         -- These four stay lists. The genre list is split later, in the genre mart.
         developers,

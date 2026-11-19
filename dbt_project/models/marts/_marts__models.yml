@@ -1,0 +1,114 @@
+# This file documents the mart models and tells dbt which data quality checks to run.
+# Comments starting with # are for people reading this file; dbt ignores them.
+version: 2
+
+models:
+  - name: mart_game_detail
+    description: >
+      One row per game per run, for the game page. Built from fact_game_snapshot
+      and dim_game. The fact stores counts, so the percentages and the change
+      since the previous run are worked out here. A missing value stays NULL, never 0.
+
+    data_tests:
+      # One game appears once per run. Fails if the join made duplicates.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - steam_appid
+              - load_id
+
+      # The mart has the same grain as the fact, so the same number of rows.
+      # Fails if the join lost rows or multiplied them.
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('fact_game_snapshot')
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game.
+        data_tests:
+          - not_null
+
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: snapshot_date
+        description: The Stockholm day of the run.
+        data_tests:
+          - not_null
+
+      - name: snapshot_hour_local
+        description: The Stockholm hour (0 to 23) in which the run started. Repeats once when the clocks go back in autumn.
+        data_tests:
+          - not_null
+
+      - name: name
+        description: Name of the game, from dim_game.
+        data_tests:
+          - not_null      # Fails if the join to dim_game found no game.
+
+      - name: genres_text
+        description: Genres as readable text, for example Indie, Simulation. NULL when a game has no genres.
+
+      - name: coming_soon
+        description: True while the game is not released yet.
+        data_tests:
+          - not_null      # Checked on 2026-11-19, no NULL in 1,053 rows.
+
+      - name: is_free
+        description: True for a free game. A free game has no price, so this tells it apart from a missing price.
+        data_tests:
+          - not_null      # Checked on 2026-11-19, no NULL in 1,053 rows.
+
+      - name: price_initial
+        description: Price before any discount, in euros. NULL means no price, never 0.
+
+      - name: price_final
+        description: Price after the discount, in euros. NULL means no price, never 0.
+
+      - name: discount_percent
+        description: Discount in percent, as Steam gives it. 0 means no discount, NULL means Steam gave no value.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: total_reviews
+        description: All-time positive plus negative reviews. NULL when there is no review data for the run. Always shown next to pct_positive.
+
+      - name: pct_positive
+        description: Share of positive reviews, all time, in percent with one decimal. NULL when there are no reviews, never 0.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: recent_total
+        description: Positive plus negative reviews of the last 30 days. NULL before 2026-11-02. Always shown next to pct_positive_recent.
+
+      - name: pct_positive_recent
+        description: Share of positive reviews in the last 30 days, in percent with one decimal. NULL when there are no recent reviews, never 0.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: counts_all_languages
+        description: False before 2026-11-02, when Steam counted English reviews only. A change is NULL when this differs between two runs.
+
+      - name: player_count
+        description: Players at that moment. NULL means Steam has no data, 0 is a real zero.
+
+      - name: collected_hour_local
+        description: The Stockholm hour in which the player count was taken. NULL when there is no player data.
+
+      - name: pct_positive_change
+        description: pct_positive minus the value of the previous run of the same game, in percentage points. NULL when there is no previous run, a value is missing, or counts_all_languages differs.
+
+      - name: player_count_change
+        description: player_count minus the value of the previous run of the same game. NULL when there is no previous run, a count is missing, or counts_all_languages differs.

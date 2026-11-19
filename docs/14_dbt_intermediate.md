@@ -217,7 +217,7 @@ dbt build
 |---|---|
 | The marts (`mart_game_detail`, `mart_genre_comparison`) | Not built. Two things are decided first: what the "change" columns compare with, and whether the genre mart is per day or per run ([doc 15](15_hourly_runs_plan.md), D1 and D2). |
 | Hourly runs | The hand-run test is done: three runs in a row on 2026-11-16 ([doc 15](15_hourly_runs_plan.md)). Dagster comes later. |
-| The three old views `FACT_GAME_STORE`, `FACT_GAME_REVIEWS` and `FACT_GAME_PLAYERS` | Still in `STEAM_DB.INTERMEDIATE` from the build on 2026-11-06. dbt does not drop models that were removed. Optional to drop. |
+| The three old views `FACT_GAME_STORE`, `FACT_GAME_REVIEWS` and `FACT_GAME_PLAYERS` | **Done on 2026-11-16.** They were left over from the build on 2026-11-06, because dbt does not drop models that were removed. I dropped them as `STEAM_TRANSFORMER`. A second `show views in schema STEAM_DB.INTERMEDIATE` (CSV export) shows only the 4 current views: `DIM_DATE`, `DIM_GAME`, `FACT_GAME_SNAPSHOT` and `INT_STEAM__GAMES_LATEST` ([doc 15](15_hourly_runs_plan.md), step A4). |
 | `metacritic_score` may change between runs | **Checked on 2026-11-06** (read-only query on `STG_STEAM__GAMES`, 8 runs, screenshot of the result). 0 of 81 games changed `name`, `release_date_text`, `required_age`, `metacritic_score`, `website` or `genres`. So they stay in `dim_game`. Only 8 runs over about two weeks, so this is not proof for later. |
 | Completeness test (81 games per run, `severity: warn`) | **Done on 2026-11-16**, `assert_81_games_per_run` passes |
 | Recent reviews never above all-time reviews (`warn`) | **Done on 2026-11-16**, a test on `fact_game_snapshot`, passes |

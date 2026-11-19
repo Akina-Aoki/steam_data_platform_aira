@@ -33,7 +33,7 @@ models:
   - name: dim_game
     description: >
       One row per game, with the things that rarely change (name, release,
-      store info, platforms, lists). Built from the newest row of each game.
+      store info, lists). Built from the newest row of each game.
       Price and status are not here, they live in the fact table.
       The four lists (developers, publishers, genres, categories) stay lists.
 

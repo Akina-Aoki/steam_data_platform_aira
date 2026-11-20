@@ -118,7 +118,7 @@ Only after the code step they describe is done. These docs say "once a day" or "
 | [09](09_key_pair_login.md) | **Done 2026-11-16.** "Once an hour at most", and Airflow is now Dagster. The 2026-10-30 run is still called a daily run, because it was one. |
 | [01](01_infra_setup.md) | **Done 2026-11-16.** Airflow in Docker is now Dagster, one run every hour. |
 | `logical_model.dbml` and `assets/logical_model_1.png` | **Done.** The dbml and the png are both the new version (checked 2026-11-16 by looking at the picture): `dim_date` 7 columns, `dim_game` 14, `fact_game_snapshot` 19 with `snapshot_hour_local`, two links, no marts. |
-| `_int_steam__models.yml` | **Done 2026-11-16, committed.** The `dim_game` description now says "store info, lists", and `dbt parse` ran with no error. |
+| `_int_steam__models.yml` | **Done 2026-11-18.** I wrote on 2026-11-16 that the `dim_game` description was fixed and committed, but on 2026-11-18 the file still said "store info, platforms, lists". I removed the word "platforms" by hand on 2026-11-18. The whole-project `dbt build` on 2026-11-19 read the file with no error (`PASS=73 WARN=0 ERROR=0`). |
 | [13](13_conceptual_model.md) and [14](14_dbt_intermediate.md) | **Done 2026-11-16.** Both now describe the one fact, the 14 columns of `dim_game`, `snapshot_hour_local`, 10 runs and the hourly plan. Doc 14 has a new section for `fact_game_snapshot`, so its later sections moved from 5, 6, 7 to 6, 7, 8. The caption of the picture in doc 13 is updated and the png is the new version. **Updated again 2026-11-16** after the three hourly rounds: both docs now say 13 runs, and that two runs in one day were tested. |
 
 ## 6. Things to remember

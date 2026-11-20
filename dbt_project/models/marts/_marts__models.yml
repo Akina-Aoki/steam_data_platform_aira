@@ -1,0 +1,331 @@
+# This file documents the mart models and tells dbt which data quality checks to run.
+# Comments starting with # are for people reading this file; dbt ignores them.
+version: 2
+
+models:
+  - name: mart_game_detail
+    description: >
+      (Business): Everything the game page needs to tell the story of ONE game: what it is, what
+      it costs, how well it is reviewed, how many people play it, and whether it is
+      doing better or worse than the last time we checked.
+      (Technical): One row per game per run, for the game page. Built from fact_game_snapshot
+      and dim_game. The fact stores counts, so the percentages and the change
+      since the previous run are worked out here. A missing value stays NULL, never 0.
+
+    data_tests:
+      # One game appears once per run. Fails if the join made duplicates.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - steam_appid
+              - load_id
+
+      # The mart has the same grain as the fact, so the same number of rows.
+      # Fails if the join lost rows or multiplied them.
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('fact_game_snapshot')
+
+    columns:
+      - name: steam_appid
+        description: Steam id of the game.
+        data_tests:
+          - not_null
+
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: snapshot_date
+        description: The Stockholm day of the run.
+        data_tests:
+          - not_null
+
+      - name: snapshot_hour_local
+        description: The Stockholm hour (0 to 23) in which the run started. Repeats once when the clocks go back in autumn.
+        data_tests:
+          - not_null
+
+      - name: name
+        description: Name of the game, from dim_game.
+        data_tests:
+          - not_null      # Fails if the join to dim_game found no game.
+
+      - name: genres_text
+        description: Genres as readable text, for example Indie, Simulation. NULL when a game has no genres.
+
+      - name: coming_soon
+        description: True while the game is not released yet.
+        data_tests:
+          - not_null      # Checked on 2026-11-19, no NULL in 1,053 rows.
+
+      - name: is_free
+        description: True for a free game. A free game has no price, so this tells it apart from a missing price.
+        data_tests:
+          - not_null      # Checked on 2026-11-19, no NULL in 1,053 rows.
+
+      - name: price_initial
+        description: Price before any discount, in euros. NULL means no price, never 0.
+
+      - name: price_final
+        description: Price after the discount, in euros. NULL means no price, never 0.
+
+      - name: discount_percent
+        description: Discount in percent, as Steam gives it. 0 means no discount, NULL means Steam gave no value.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: total_reviews
+        description: All-time positive plus negative reviews. NULL when there is no review data for the run. Always shown next to pct_positive.
+
+      - name: pct_positive
+        description: Share of positive reviews, all time, in percent with one decimal. NULL when there are no reviews, never 0.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: recent_total
+        description: Positive plus negative reviews of the last 30 days. NULL before 2026-11-02. Always shown next to pct_positive_recent.
+
+      - name: pct_positive_recent
+        description: Share of positive reviews in the last 30 days, in percent with one decimal. NULL when there are no recent reviews, never 0.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: counts_all_languages
+        description: False before 2026-11-02, when Steam counted English reviews only. A change is NULL when this differs between two runs.
+
+      - name: player_count
+        description: Players at that moment. NULL means Steam has no data, 0 is a real zero.
+
+      - name: collected_hour_local
+        description: The Stockholm hour in which the player count was taken. NULL when there is no player data.
+
+      - name: pct_positive_change
+        description: pct_positive minus the value of the previous run of the same game, in percentage points. NULL when there is no previous run, a value is missing, or counts_all_languages differs.
+
+      - name: player_count_change
+        description: player_count minus the value of the previous run of the same game. NULL when there is no previous run, a count is missing, or counts_all_languages differs.
+
+
+  - name: mart_portfolio_overview
+    description: >
+      (Business): The big picture of the whole Steam catalogue, for someone who wants to compare kinds of games, not look at one game at a time.
+      (Technical): One row per group per run: the catalogue split by release year, price level,
+      free or paid, status and discount. Built from fact_game_snapshot and dim_game.
+      Percentages come from sums, never from an average of percentages. One game is
+      in one group of each group_type, so never add different group types together.
+
+    data_tests:
+      # One group appears once per run. Also fails if a run split into two rows.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - load_id
+              - group_type
+              - group_value
+
+      # A part of a group can never be bigger than the group.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "games_with_discount <= game_count and games_with_price <= game_count and games_with_player_data <= game_count"
+
+    columns:
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: snapshot_date
+        description: The Stockholm day of the run.
+        data_tests:
+          - not_null
+
+      - name: snapshot_hour_local
+        description: The Stockholm hour (0 to 23) in which the run started.
+        data_tests:
+          - not_null
+
+      - name: group_type
+        description: The way the games are split. One of release_year, price_level, free_or_paid, status, has_discount.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['release_year', 'price_level', 'free_or_paid', 'status', 'has_discount']
+
+      - name: group_value
+        description: The group inside the type, as text. For example 2019, Under 10, Free, Released or Discount. Games that are not released show Coming soon or To be announced under release_year.
+        data_tests:
+          - not_null
+
+      - name: game_count
+        description: Number of games in the group in this run. Inside one group_type it adds up to all games of the run, never add different group types.
+        data_tests:
+          - not_null
+
+      - name: total_positive
+        description: Positive reviews of all games in the group, all time. NULL when no game has review data.
+
+      - name: total_negative
+        description: Negative reviews of all games in the group, all time. NULL when no game has review data.
+
+      - name: total_reviews
+        description: total_positive plus total_negative. Always shown next to pct_positive.
+
+      - name: pct_positive
+        description: All positive reviews of the group divided by all its reviews, in percent with one decimal. NULL when there are no reviews, never 0.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: counts_all_languages
+        description: False before 2026-11-02, when Steam counted English reviews only. Do not compare groups across that day.
+
+      - name: recent_positive
+        description: Positive reviews of the last 30 days, all games in the group. NULL before 2026-11-02.
+
+      - name: recent_negative
+        description: Negative reviews of the last 30 days, all games in the group. NULL before 2026-11-02.
+
+      - name: recent_total
+        description: recent_positive plus recent_negative. Always shown next to pct_positive_recent.
+
+      - name: pct_positive_recent
+        description: Positive share of the last 30 days, from the sums of the group, in percent with one decimal. NULL when there are no recent reviews.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: players_total
+        description: Players of all games in the group at that run. NULL when no game has player data, 0 is a real zero. Add up games inside one run, never across runs.
+
+      - name: games_with_player_data
+        description: How many games in the group have a player count in this run.
+
+      - name: games_with_price
+        description: How many games in the group have a price. Free games and games with no price are not counted.
+
+      - name: avg_price_final
+        description: Average price after the discount, in euros, over the games that have a price. Free games and games with no price are not in it.
+
+      - name: games_with_discount
+        description: How many games in the group have a discount above 0.
+
+
+  - name: mart_genre_comparison
+    description: >
+      (Business): Compares the genres of the catalogue: how many games each genre has,
+      how players feel about them, how many players they have and what they cost.
+      (Technical): One row per genre per run. Built from fact_game_snapshot and dim_game.
+      The genre list of each game is split, so a game with several genres is in several
+      rows. The genres of one run therefore add up to more than the number of games:
+      never add genres together. Percentages come from sums, never from an average
+      of percentages.
+
+    data_tests:
+      # One genre appears once per run. Also fails if a run split into two rows.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - load_id
+              - genre
+
+      # A part of a genre can never be bigger than the genre.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "coming_soon_games <= game_count and games_with_price <= game_count and games_with_player_data <= game_count"
+
+    columns:
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: snapshot_date
+        description: The Stockholm day of the run.
+        data_tests:
+          - not_null
+
+      - name: snapshot_hour_local
+        description: The Stockholm hour (0 to 23) in which the run started.
+        data_tests:
+          - not_null
+
+      - name: genre
+        description: One genre from the genre list of a game, for example Strategy. A game with no genre list shows as No genre.
+        data_tests:
+          - not_null
+
+      - name: game_count
+        description: Number of games in the genre in this run, released or not. A game with several genres is counted in each of them, so never add genres together.
+        data_tests:
+          - not_null
+
+      - name: coming_soon_games
+        description: How many of the games in the genre are not released yet. They are in game_count, but have no reviews, players or price.
+
+      - name: total_positive
+        description: Positive reviews of all games in the genre, all time. NULL when no game has review data.
+
+      - name: total_negative
+        description: Negative reviews of all games in the genre, all time. NULL when no game has review data.
+
+      - name: total_reviews
+        description: total_positive plus total_negative. Always shown next to pct_positive.
+
+      - name: pct_positive
+        description: All positive reviews of the genre divided by all its reviews, in percent with one decimal. NULL when there are no reviews, never 0.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: counts_all_languages
+        description: False before 2026-11-02, when Steam counted English reviews only. Do not compare genres across that day.
+
+      - name: recent_positive
+        description: Positive reviews of the last 30 days, all games in the genre. NULL before 2026-11-02.
+
+      - name: recent_negative
+        description: Negative reviews of the last 30 days, all games in the genre. NULL before 2026-11-02.
+
+      - name: recent_total
+        description: recent_positive plus recent_negative. Always shown next to pct_positive_recent.
+
+      - name: pct_positive_recent
+        description: Positive share of the last 30 days, from the sums of the genre, in percent with one decimal. NULL when there are no recent reviews.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: players_total
+        description: Players of all games in the genre at that run. NULL when no game has player data, 0 is a real zero. Add up games inside one run, never across runs.
+
+      - name: games_with_player_data
+        description: How many games in the genre have a player count in this run.
+
+      - name: avg_player_count
+        description: players_total divided by games_with_player_data, with one decimal. NULL when no game has a player count. Players depend on the hour of the run.
+
+      - name: games_with_price
+        description: How many games in the genre have a price. Free games and games with no price are not counted.
+
+      - name: avg_price_final
+        description: Average price after the discount, in euros, over the games that have a price. Free games and games with no price are not in it.

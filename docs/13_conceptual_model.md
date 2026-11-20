@@ -4,7 +4,7 @@
 
 This document describes **what the data model is about**, before any tables or columns are built. It lists the things we want to know about (entities), how they connect, and which business questions the data can and cannot answer.
 
-**Status:** Written on 2026-11-05 and updated on 2026-11-06 and 2026-11-16. The star (one fact and two dimensions) is built and tested ([doc 14](14_dbt_intermediate.md)). The marts are not built yet. On 2026-11-06 the single fact was split into three, after a tip from my teacher. On 2026-11-16 I went back to **one fact**, `fact_game_snapshot`, on the branch `feat/one-fact-table`. The three-fact version stays on `main` until that branch is merged. Runs are planned **every hour** from now on ([doc 15](15_hourly_runs_plan.md)). On 2026-11-19 the first mart, `mart_game_detail`, was built ([doc 16](16_dbt_marts.md)), and a third mart, `mart_portfolio_overview`, was added to the plan. Items marked *proposed* are not agreed. The decisions in section 9 marked *Agreed* were made on 2026-11-05 and 2026-11-16.
+**Status:** Written on 2026-11-05 and updated on 2026-11-06 and 2026-11-16. The star (one fact and two dimensions) is built and tested ([doc 14](14_dbt_intermediate.md)). The marts are not built yet. On 2026-11-06 the single fact was split into three, after a tip from my teacher. On 2026-11-16 I went back to **one fact**, `fact_game_snapshot`, on the branch `feat/one-fact-table`. The three-fact version stays on `main` until that branch is merged. Runs are planned **every hour** from now on ([doc 15](15_hourly_runs_plan.md)). On 2026-11-19 the first mart, `mart_game_detail`, was built ([doc 16](16_dbt_marts.md)), and a third mart, `mart_portfolio_overview`, was added to the plan. It was built on 2026-11-20. Items marked *proposed* are not agreed. The decisions in section 9 marked *Agreed* were made on 2026-11-05 and 2026-11-16.
 
 `Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate (facts and dimensions) → dbt Marts → Streamlit`
 
@@ -136,7 +136,7 @@ The picture shows the star only. The marts are not drawn and are not in the dbml
 
 ### 6.4 Columns of each table
 
-The "comes from" column names the staging view the value is taken from ([doc 10](10_dbt_sources_staging.md)). The star (the fact and the two dimensions) is built, see [doc 14](14_dbt_intermediate.md). `mart_game_detail` is built ([doc 16](16_dbt_marts.md)). The other two marts are *proposed*.
+The "comes from" column names the staging view the value is taken from ([doc 10](10_dbt_sources_staging.md)). The star (the fact and the two dimensions) is built, see [doc 14](14_dbt_intermediate.md). `mart_game_detail` and `mart_portfolio_overview` are built ([doc 16](16_dbt_marts.md)). `mart_genre_comparison` is *proposed*.
 
 #### `fact_game_snapshot` (one game in one run)
 
@@ -189,23 +189,23 @@ Not part of the star. It is the table Streamlit reads for one game, because the 
 
 #### `mart_portfolio_overview` (one group in one run)
 
-Not part of the star, and not built yet. The columns are *proposed*. Areas 1, 4 and 5 compare **groups** of games: the catalogue split by release year, price level, free or paid, released or coming soon, and games with or without a discount. `mart_game_detail` has one row per game, so it cannot give a group percent from sums. This mart can.
+Not part of the star. **Built on 2026-11-20**, see [doc 16](16_dbt_marts.md). Areas 1, 4 and 5 compare **groups** of games: the catalogue split by release year, price level, free or paid, released or coming soon, and games with or without a discount. `mart_game_detail` has one row per game, so it cannot give a group percent from sums. This mart can.
 
 It reads `fact_game_snapshot` and `dim_game`. It is five small group-bys stacked on top of each other (`union all`), each grouping the games of every run by one thing:
 
 | `group_type` | `group_value` examples | Answers |
 |---|---|---|
-| `release_year` | 2019, 2021 | Areas 1 and 5 |
-| `price_level` | bands, not defined yet | Areas 1 and 4 |
+| `release_year` | 2019, 2021, and Coming soon or To be announced for games not released | Areas 1 and 5 |
+| `price_level` | Free, No price, Under 10, 10 to 19.99, 20 to 39.99, 40 and above | Areas 1 and 4 |
 | `free_or_paid` | free, paid | Area 1 |
 | `status` | released, coming soon | Area 1 |
 | `has_discount` | yes, no | Area 4 |
 
 Columns: the run (`load_id`, `snapshot_date`, `snapshot_hour_local`), `group_type`, `group_value`, `game_count`, `total_positive`, `total_negative`, `pct_positive` (all positive reviews of the group divided by all its reviews), the same for the last 30 days, `players_total`, `games_with_player_data` and `counts_all_languages`.
 
-Rules: a percent comes from sums, never from an average of percents. Players are added up inside one run, never across runs. For one run and one `group_type`, each game is in one group, so `game_count` should add up to 81. That is a check for the tests (it depends on how the 4 unreleased games are shown in `release_year`).
+Rules: a percent comes from sums, never from an average of percents. Players are added up inside one run, never across runs. For one run and one `group_type`, each game is in one group, so `game_count` adds up to 81. A test checks this.
 
-Still to decide when it is built: the price bands, how the 4 unreleased games show in `release_year`, and whether free games are in the price averages.
+Decided on 2026-11-19: the price bands use the regular price (`price_initial`), with edges at 10, 20 and 40. A missing price is a band called No price. Free games are a band called Free and are not in the price average. The 4 unreleased games show their store text in `release_year`.
 
 ### What changed from the proposal
 
@@ -272,6 +272,7 @@ This is why `games` is the base of the fact table. The other tables are joined t
 | "Change since the previous run" compares with the **previous run** (D1) | Agreed 2026-11-19 | It works today, and it matches my PDF ("from one run to the next"). "Same hour yesterday" had no partner in 1,053 rows (checked 2026-11-18). It can be added later as two more columns. |
 | `mart_game_detail` has the 20 columns of section 6.4 | Agreed and built 2026-11-19 | See [doc 16](16_dbt_marts.md). |
 | The marts are rebuilt by hand with `dbt build` for now | Agreed 2026-11-19 | A mart is a table, so it goes old after each ingestion run. Dagster does it later, and the cloud (maybe Azure) after that. |
+| Price bands in `mart_portfolio_overview`: Under 10, 10 to 19.99, 20 to 39.99, 40 and above, plus Free and No price | Agreed 2026-11-19 | Based on the regular price (`price_initial`), so a sale does not move a game. The edges are fixed, so the history of a chart never changes. In the newest run the paid bands hold 27, 19, 16 and 11 games. 59.99 (2 games) is not its own band, because 2 games are noise. |
 
 ## 10. Things in the project proposal that no longer match
 
@@ -292,6 +293,6 @@ This is why `games` is the base of the fact table. The other tables are joined t
 | 1 | Agree on the open items in section 9. **Done on 2026-11-05**, no row is marked Open. The grain was agreed too, so two runs on one day are no longer a problem. Rows marked *Proposed* (change in a mart, achievements) are confirmed when we build. |
 | 2 | Logical model: drawn on dbdiagram.io (section 6.2). **Done.** |
 | 3 | Build the intermediate models (all views): `int_steam__games_latest`, `dim_date`, `dim_game` and `fact_game_snapshot`. **Done on 2026-11-16**, the whole-project `dbt build` gave `PASS=60 WARN=0 ERROR=0`. |
-| 4 | Build the marts one at a time, because Streamlit reads `MARTS` only: `mart_game_detail` (**done 2026-11-19**, [doc 16](16_dbt_marts.md)), then `mart_portfolio_overview`, then `mart_genre_comparison`. D1 is decided (the previous run). D2, whether the genre mart is per day or per run, is still open ([doc 15](15_hourly_runs_plan.md)). |
+| 4 | Build the marts one at a time, because Streamlit reads `MARTS` only: `mart_game_detail` (**done 2026-11-19**, [doc 16](16_dbt_marts.md)), then `mart_portfolio_overview` (**done 2026-11-20**), then `mart_genre_comparison`. D1 is decided (the previous run). D2, whether the genre mart is per day or per run, is still open ([doc 15](15_hourly_runs_plan.md)). |
 | 5 | Write the doc for the intermediate layer. **Done**, see [doc 14](14_dbt_intermediate.md). |
 | 6 | Hourly runs by hand: **done on 2026-11-16** (three runs in a row, [doc 15](15_hourly_runs_plan.md)). Dagster comes later. |

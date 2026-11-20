@@ -7,7 +7,7 @@ The marts are the last layer of dbt. They are tables in `STEAM_DB.MARTS`. Stream
 Think of the star in `INTERMEDIATE` as a warehouse, with everything in boxes. A mart is a shelf in the shop, set up to answer one kind of question. The dashboard is a customer who may only walk into the shop.
 
 **Branch:** `feat/dbt-marts`
-**Status (2026-11-19):** the first mart, `mart_game_detail`, is built, tested and checked. The other two marts are not built.
+**Status (2026-11-20):** two marts are built, tested and checked: `mart_game_detail` (2026-11-19) and `mart_portfolio_overview` (2026-11-20). `mart_genre_comparison` is not built.
 
 `Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate → dbt Marts → Streamlit`
 
@@ -18,7 +18,7 @@ The design (business areas, grain) is in [doc 13](13_conceptual_model.md). This 
 | # | Mart | One row is | Answers (areas in doc 13, section 2) | Status |
 |---|---|---|---|---|
 | 1 | `mart_game_detail` | one game in one run | 2, 3, 7, and the price of one game (4) | Built 2026-11-19 |
-| 2 | `mart_portfolio_overview` | one group in one run, for example "release year 2019" | 1, 4, 5 | Not built |
+| 2 | `mart_portfolio_overview` | one group in one run, for example "release year 2019" | 1, 4, 5 | Built 2026-11-20 |
 | 3 | `mart_genre_comparison` | one genre in one run (not decided, see D2 in [doc 15](15_hourly_runs_plan.md)) | 6 | Not built, last |
 
 Mart 2 is new. Doc 13 only had the game mart and the genre mart. I added it because areas 1, 4 and 5 compare **groups** of games, and a table with one row per game does not give a group percent from sums. Doc 13 now has it (section 6.4 and section 9).
@@ -27,7 +27,7 @@ Every mart does the same three things:
 
 1. It reads only the star (`fact_game_snapshot`, `dim_game`), never raw data.
 2. It works out what the fact does not store: totals, percentages and changes. A percent always comes from counts, never from an average of percents.
-3. It is a table, so it is a saved copy (see section 7).
+3. It is a table, so it is a saved copy (see section 8).
 
 ## 2. What I checked before building (2026-11-18)
 
@@ -79,7 +79,7 @@ A change is NULL when there is no earlier run, when a value is missing, or when 
 
 I chose the previous run. It works today, and it matches my PDF ("from one run to the next"). "Same hour yesterday" can be added later as two more columns, without changing the rest.
 
-## 4. Tests
+## 4. Tests of `mart_game_detail`
 
 12 tests, in [`_marts__models.yml`](../dbt_project/models/marts/_marts__models.yml).
 
@@ -109,7 +109,7 @@ A `not_null` test says "NULL is never allowed here." That is only true for some 
 
 The columns with `not_null` are the ones where NULL would mean a bug. For `coming_soon` and `is_free` I first thought NULL could happen. I checked the fact (2026-11-19): **0 NULL in 1,053 rows**. They come from the store page of every run, and a NULL would break the "released or coming soon" and "free or paid" splits. So I added the test.
 
-## 5. Validation
+## 5. Validation of `mart_game_detail`
 
 | Check | Result |
 |---|---|
@@ -121,7 +121,7 @@ The columns with `not_null` are the ones where NULL would mean a bug. For `comin
 
 My minimum count of NULLs, worked out before the query, was 243 and 324. Both were met. The extra 50 and 36 fit this reading, which I did **not** check: 4 unreleased games and one released free game with no reviews (50 = 5 games x 10 more runs), and 4 unreleased games with no player count (36 = 4 games x 9 more runs).
 
-## 6. Findings
+## 6. Findings for `mart_game_detail`
 
 | Finding | Evidence |
 |---|---|
@@ -131,7 +131,105 @@ My minimum count of NULLs, worked out before the query, was 243 and 324. Both we
 | 104 NULL discounts is 8 games x 13 runs | My reading, **not checked**: 4 unreleased games, 2 free games and the 2 released games with no price ([doc 13](13_conceptual_model.md)). |
 | Players depend on the hour and on the gap | Stellaris on 2026-11-16 at 9:00 has −2,984 players. It is compared with 2026-11-11 at 19:00, 4.5 days and a different hour earlier. The change column cannot show that gap. |
 
-## 7. How to run, and the freshness limit
+## 7. `mart_portfolio_overview`
+
+Files: [`mart_portfolio_overview.sql`](../dbt_project/models/marts/mart_portfolio_overview.sql) and its extra test [`assert_portfolio_groups.sql`](../dbt_project/tests/assert_portfolio_groups.sql)
+
+`mart_game_detail` has one row per game. This mart has one row per **group** of games in a run, for example "games released in 2019" or "Free games". It answers the questions about the whole catalogue (areas 1, 4 and 5 in [doc 13](13_conceptual_model.md)). It has 442 rows today: 34 per run x 13 runs.
+
+### Five ways to split the games
+
+| `group_type` | `group_value` | Answers |
+|---|---|---|
+| `release_year` | the years 2008 to 2026, and `Coming soon` or `To be announced` for games not released | Areas 1 and 5 |
+| `price_level` | `Free`, `No price`, `Under 10`, `10 to 19.99`, `20 to 39.99`, `40 and above` | Areas 1 and 4 |
+| `free_or_paid` | `Free`, `Paid` | Area 1 |
+| `status` | `Released`, `Coming soon` | Area 1 |
+| `has_discount` | `Discount`, `No discount`, `No data` | Area 4 |
+
+One game is in one group of **each** type. So inside one type the games add up to 81. Never add different types together, or the same game is counted five times.
+
+### Columns (20)
+
+| Group | Columns |
+|---|---|
+| The run | `load_id`, `snapshot_date`, `snapshot_hour_local` |
+| The group | `group_type`, `group_value` |
+| Size | `game_count` |
+| Reviews, all time | `total_positive`, `total_negative`, `total_reviews`, `pct_positive`, `counts_all_languages` |
+| Reviews, 30 days | `recent_positive`, `recent_negative`, `recent_total`, `pct_positive_recent` |
+| Players | `players_total`, `games_with_player_data` |
+| Price | `games_with_price`, `avg_price_final`, `games_with_discount` |
+
+The percent is all positive reviews of the group divided by all its reviews. It is **not** an average of the percents of the games, because that would treat a game with 3 reviews like a game with 30,000.
+
+### How the SQL works
+
+The file is a chain of six small steps, and it has a comment above each one.
+
+| Step | What it does |
+|---|---|
+| `fact` and `game` | Read the fact and `dim_game` |
+| `labelled` | Gives every game five labels, one for each way to split. A `case when` picks the price band. |
+| `stacked` | Copies the games five times, once for each label (`union all`) |
+| `grouped` | Groups the copies and adds up the counts |
+| `final` | Works out the percents from the sums |
+
+Why stack first? One `group by` then does all the work. Without it I would write the same grouping five times.
+
+### Price bands
+
+| Band | From (included) | To (not included) | Games, newest run |
+|---|---|---|---|
+| Under 10 | 0.01 | 10 | 27 |
+| 10 to 19.99 | 10 | 20 | 19 |
+| 20 to 39.99 | 20 | 40 | 16 |
+| 40 and above | 40 | none | 11 |
+| Free | | | 2 |
+| No price | | | 6 |
+
+- The band uses the regular price (`price_initial`). A game on sale stays in its band.
+- The edges are fixed numbers. A new game cannot move an old game, so the history of a chart does not change.
+- Every price ends in .99, so no game sits on an edge.
+- 59.99 (2 games) is not its own band. Two games are noise, so they are in `40 and above`.
+
+How I decided: I counted my own prices (a CSV from Snowflake, 2026-11-19) and asked a separate research agent. The prompt is in `scratch/` and not in git. The agent guessed my data wrongly at first (it expected `40 and above` to be the biggest band). After it saw my numbers, it gave the same four bands.
+
+### Tests
+
+12 tests, 11 in [`_marts__models.yml`](../dbt_project/models/marts/_marts__models.yml) and 1 in its own file.
+
+| Test | What it catches |
+|---|---|
+| Unique `load_id` + `group_type` + `group_value` | A duplicate group, or a run that split in two |
+| A part is never bigger than the group (`games_with_discount`, `games_with_price`, `games_with_player_data` against `game_count`) | A wrong count |
+| `not_null` on the run, `group_type`, `group_value` and `game_count` (6 columns) | A broken run or group |
+| `group_type` has only the five known values | A typo in a type |
+| `pct_positive` and `pct_positive_recent` between 0 and 100 | A wrong formula |
+| `assert_portfolio_groups` (own file) | A game lost or counted twice. In every run, each group type adds up to the number of games of that run. |
+
+As in `mart_game_detail`, the other columns have no `not_null`. NULL is a valid answer there (no reviews, no players, no price).
+
+### What I checked (2026-11-20, newest run)
+
+| Check | Result |
+|---|---|
+| `dbt build --select mart_portfolio_overview` | `PASS=13 WARN=0 ERROR=0`. The table has 442 rows. |
+| Whole project `dbt build` | `PASS=86 WARN=0 ERROR=0` (11 models, 75 tests). I saw the last lines only. |
+| `price_level` | 27, 19, 16, 11, No price 6, Free 2. These are the numbers I counted from the CSV, and they add up to 81. |
+| `free_or_paid` | Free 2, Paid 79 |
+| `status` | Released 77, Coming soon 4 |
+| `has_discount` | Discount 4, No discount 69, No data 8 (6 games with no price and 2 free games) |
+| `release_year` | 19 years and 2 texts, 21 groups, adding up to 81. `Coming soon` 2 and `To be announced` 2. |
+
+### Good to know when reading it
+
+- **Paid includes 6 games with no price.** Steam does not mark them as free. So `Paid` has 79 games but only 73 have a price.
+- **`avg_price_final` is the price after the discount.** The band uses the regular price. That is why `40 and above` has an average of 44.54, below 49.99: 3 of its 11 games were on sale.
+- **Small groups are noisy.** Many years hold only 2 or 3 games. The count always sits next to the percent.
+- **`group_value` is text**, so it sorts alphabetically. The dashboard has to sort the years itself.
+
+## 8. How to run, and the freshness limit
 
 From the `dbt_project/` folder:
 
@@ -145,7 +243,7 @@ Or the whole project: `uv run --env-file ../.env dbt build`.
 
 For now I run `dbt build` by hand after an ingestion run. Dagster does it later, and the cloud (maybe Azure) after that. **Limit for the thesis:** the dashboard is only as new as the last `dbt build`.
 
-## 8. Decisions
+## 9. Decisions
 
 | Decision | Reason |
 |---|---|
@@ -156,15 +254,21 @@ For now I run `dbt build` by hand after an ingestion run. Dagster does it later,
 | `coming_soon` and `is_free` get `not_null` | 0 NULL in 1,053 rows, and a NULL would break the splits. |
 | I run `dbt build` by hand for now | Local development. Dagster and the cloud come later. |
 | The model name is `mart_game_detail` and the YAML is `_marts__models.yml` | Same naming as `_int_steam__models.yml` |
+| `mart_portfolio_overview` stacks five copies of the games and groups them once | One `group by` does all the work. Each game is in one group of each type. |
+| Price bands: Under 10, 10 to 19.99, 20 to 39.99, 40 and above | Regular price, fixed edges, at least 11 games per band. 59.99 (2 games) is merged into `40 and above`. |
+| The price band uses `price_initial` | A sale does not move a game to another band. |
+| Free games are a band called `Free` and are not in the price average. A missing price is a band called `No price`. | A missing price is never 0. |
+| Games not released show their store text in `release_year` (`Coming soon`, `To be announced`) | They stay visible and are not mixed into a year. |
 
-## 9. Not done yet
+## 10. Not done yet
 
 | Item | Status |
 |---|---|
-| `mart_portfolio_overview` | Not built. Still to decide: the price bands, the 4 unreleased games in `release_year`, free games in price averages. |
+| Years in `mart_portfolio_overview` | Many years hold only 2 or 3 games, so a percent per year is noisy. If the dashboard looks jumpy, years could be grouped into periods. That would be a display choice. Not decided. |
+| Price band and discount together | Not planned. The mart groups by one thing at a time. |
 | `mart_genre_comparison` | Not built, last. D2 is open: per run, or the latest run of each day. |
 | "Which games have the most players now?" (area 2) | A ranking. It clashes with the "no ranking" decision in doc 13. Not decided. |
 | The gap between two runs is not shown | The `hours_since_previous_run` column is not in doc 13, so I left it out. |
 | Most `pct_positive_change` values are 0.0 | With about 139,000 reviews, 10 new ones do not move a percent rounded to one decimal. A `total_reviews_change` column could show it. Not added. |
-| Docs 14 and 15 and the dbml | Not updated for the marts yet. Doc 13 was updated on 2026-11-19. Doc 15 still shows D1 as open. |
+| Docs 14 and 15 and the dbml | Not updated for the marts yet. Doc 13 was updated on 2026-11-19 and 2026-11-20. Doc 15 still shows D1 as open. |
 | Many hourly runs | Not tested. The mart was checked on 13 runs, of which only 2026-11-16 has several in one day. |

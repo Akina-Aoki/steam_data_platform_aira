@@ -7,7 +7,7 @@ The marts are the last layer of dbt. They are tables in `STEAM_DB.MARTS`. Stream
 Think of the star in `INTERMEDIATE` as a warehouse, with everything in boxes. A mart is a shelf in the shop, set up to answer one kind of question. The dashboard is a customer who may only walk into the shop.
 
 **Branch:** `feat/dbt-marts`
-**Status (2026-11-20):** two marts are built, tested and checked: `mart_game_detail` (2026-11-19) and `mart_portfolio_overview` (2026-11-20). `mart_genre_comparison` is not built.
+**Status (2026-11-20):** all three marts are built, tested and checked: `mart_game_detail` (2026-11-19), `mart_portfolio_overview` and `mart_genre_comparison` (both 2026-11-20).
 
 `Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate → dbt Marts → Streamlit`
 
@@ -19,7 +19,7 @@ The design (business areas, grain) is in [doc 13](13_conceptual_model.md). This 
 |---|---|---|---|---|
 | 1 | `mart_game_detail` | one game in one run | 2, 3, 7, and the price of one game (4) | Built 2026-11-19 |
 | 2 | `mart_portfolio_overview` | one group in one run, for example "release year 2019" | 1, 4, 5 | Built 2026-11-20 |
-| 3 | `mart_genre_comparison` | one genre in one run (not decided, see D2 in [doc 15](15_hourly_runs_plan.md)) | 6 | Not built, last |
+| 3 | `mart_genre_comparison` | one genre in one run (D2, decided 2026-11-20) | 6, and the genre split of 1 | Built 2026-11-20 |
 
 Mart 2 is new. Doc 13 only had the game mart and the genre mart. I added it because areas 1, 4 and 5 compare **groups** of games, and a table with one row per game does not give a group percent from sums. Doc 13 now has it (section 6.4 and section 9).
 
@@ -27,7 +27,7 @@ Every mart does the same three things:
 
 1. It reads only the star (`fact_game_snapshot`, `dim_game`), never raw data.
 2. It works out what the fact does not store: totals, percentages and changes. A percent always comes from counts, never from an average of percents.
-3. It is a table, so it is a saved copy (see section 8).
+3. It is a table, so it is a saved copy (see section 9).
 
 ## 2. What I checked before building (2026-11-18)
 
@@ -229,7 +229,77 @@ As in `mart_game_detail`, the other columns have no `not_null`. NULL is a valid 
 - **Small groups are noisy.** Many years hold only 2 or 3 games. The count always sits next to the percent.
 - **`group_value` is text**, so it sorts alphabetically. The dashboard has to sort the years itself.
 
-## 8. How to run, and the freshness limit
+## 8. `mart_genre_comparison`
+
+Files: [`mart_genre_comparison.sql`](../dbt_project/models/marts/mart_genre_comparison.sql) and its extra test [`assert_genre_comparison.sql`](../dbt_project/tests/assert_genre_comparison.sql)
+
+One row is **one genre in one run**. It answers how the genres compare (area 6 in [doc 13](13_conceptual_model.md)) and how the catalogue splits by genre (area 1). It has 156 rows today: 12 genres per run x 13 runs.
+
+### The one new idea: splitting the genre list
+
+A game keeps its genres as a list, for example `["Indie", "Strategy"]`. The mart first splits the list, so a game with 3 genres becomes 3 rows (`lateral flatten`). Then it groups by genre, like the portfolio mart.
+
+This has one consequence: **the genre rows of a run add up to more than the number of games.** In the newest run they add up to 165, and the catalogue has 81 games. So never add genres together. Never show a "total" over the genres.
+
+### Columns (20)
+
+| Group | Columns |
+|---|---|
+| The run | `load_id`, `snapshot_date`, `snapshot_hour_local` |
+| The group | `genre` |
+| Size | `game_count`, `coming_soon_games` |
+| Reviews, all time | `total_positive`, `total_negative`, `total_reviews`, `pct_positive`, `counts_all_languages` |
+| Reviews, 30 days | `recent_positive`, `recent_negative`, `recent_total`, `pct_positive_recent` |
+| Players | `players_total`, `games_with_player_data`, `avg_player_count` |
+| Price | `games_with_price`, `avg_price_final` |
+
+As before, the percents come from sums. `avg_player_count` is `players_total` divided by `games_with_player_data`. It is NULL when no game has a count.
+
+### How the SQL works
+
+| Step | What it does |
+|---|---|
+| `fact`, `game`, `joined` | Put the fact and the genre list of each game together |
+| `split` | Splits the genre list into one row per game per genre. `outer => true` keeps a game with no genre list, and it gets the genre `No genre`. |
+| `grouped` | Groups by run and genre and adds up the counts |
+| `final` | Works out the percents and the average from the sums |
+
+The file has a comment above each step.
+
+### Decisions
+
+- **One row per genre per run (D2).** Doc 13 first said "one genre on one day". A run is the same grain as the other two marts, no rule is needed to pick the "latest run of the day", and the hour stays next to the player numbers.
+- **Unreleased games count in `game_count`.** Area 1 needs the whole catalogue by genre. They have no reviews, players or price (NULL), so they change nothing else. The column `coming_soon_games` shows how many of them are in the genre.
+
+### Tests
+
+10 tests: 9 in [`_marts__models.yml`](../dbt_project/models/marts/_marts__models.yml) and 1 in its own file.
+
+| Test | What it catches |
+|---|---|
+| Unique `load_id` + `genre` | A duplicate genre, or a run that split in two |
+| A part is never bigger than the genre (`coming_soon_games`, `games_with_price`, `games_with_player_data` against `game_count`) | A wrong count |
+| `not_null` on the run columns, `genre` and `game_count` (5 columns) | A broken run or genre |
+| `pct_positive` and `pct_positive_recent` between 0 and 100 | A wrong formula |
+| `assert_genre_comparison` (own file) | A game lost or counted twice in the split. The genre rows of each run must add up to the number of game-genre pairs worked out from the lists. |
+
+### What I checked (2026-11-20)
+
+| Check | Result |
+|---|---|
+| `dbt build --select mart_genre_comparison` | `PASS=11 WARN=0 ERROR=0`. The table has 156 rows. I guessed 250 to 300, so I was wrong: there are only 12 genres. |
+| Whole project `dbt build` | `PASS=97 WARN=0 ERROR=0` (12 models, 85 tests). I saw the last lines only. |
+| Newest run | 12 genres. The biggest are Strategy (65 games) and Simulation (30). The `game_count` values add up to 165, which is more than the 81 games. |
+| NULL and 0 | `Massively Multiplayer` (1 game, not released) has 0 reviews, so `pct_positive` is NULL and not 0%. `Free To Play` has no price in the average. `Racing` has `avg_player_count` 0.0, a real zero. |
+| `No genre` | No such row in the newest run, so every game has a genre |
+
+### Good to know when reading it
+
+- **Small genres are noisy.** Five of the 12 genres hold 1 to 3 games. The percent of a 1-game genre is that one game. The count always sits next to the percent.
+- **The player average can be misleading.** In a genre with many games, a few popular games can pull the average up. I have not checked this with the data.
+- **Do not add genres together**, and do not compare a genre with the whole catalogue by adding up the rows.
+
+## 9. How to run, and the freshness limit
 
 From the `dbt_project/` folder:
 
@@ -243,7 +313,7 @@ Or the whole project: `uv run --env-file ../.env dbt build`.
 
 For now I run `dbt build` by hand after an ingestion run. Dagster does it later, and the cloud (maybe Azure) after that. **Limit for the thesis:** the dashboard is only as new as the last `dbt build`.
 
-## 9. Decisions
+## 10. Decisions
 
 | Decision | Reason |
 |---|---|
@@ -259,16 +329,20 @@ For now I run `dbt build` by hand after an ingestion run. Dagster does it later,
 | The price band uses `price_initial` | A sale does not move a game to another band. |
 | Free games are a band called `Free` and are not in the price average. A missing price is a band called `No price`. | A missing price is never 0. |
 | Games not released show their store text in `release_year` (`Coming soon`, `To be announced`) | They stay visible and are not mixed into a year. |
+| `mart_genre_comparison` has one row per genre per run (D2) | Same grain as the other marts. No rule for picking a run, and the hour stays next to the player numbers. |
+| Unreleased games count in the genre `game_count`, with a column `coming_soon_games` | Area 1 needs the whole catalogue by genre. They add only NULL to reviews, players and price. |
+| A game with no genre list shows as `No genre` | `outer => true` keeps it, so it does not disappear. There is none in the newest run. |
 
-## 10. Not done yet
+## 11. Not done yet
 
 | Item | Status |
 |---|---|
 | Years in `mart_portfolio_overview` | Many years hold only 2 or 3 games, so a percent per year is noisy. If the dashboard looks jumpy, years could be grouped into periods. That would be a display choice. Not decided. |
 | Price band and discount together | Not planned. The mart groups by one thing at a time. |
+| The player average per genre | I have not checked how much a few big games pull it up. A median could be shown instead. Not decided. |
 | `mart_genre_comparison` | Not built, last. D2 is open: per run, or the latest run of each day. |
 | "Which games have the most players now?" (area 2) | A ranking. It clashes with the "no ranking" decision in doc 13. Not decided. |
 | The gap between two runs is not shown | The `hours_since_previous_run` column is not in doc 13, so I left it out. |
 | Most `pct_positive_change` values are 0.0 | With about 139,000 reviews, 10 new ones do not move a percent rounded to one decimal. A `total_reviews_change` column could show it. Not added. |
-| Docs 14 and 15 and the dbml | Not updated for the marts yet. Doc 13 was updated on 2026-11-19 and 2026-11-20. Doc 15 still shows D1 as open. |
+| Docs 14 and 15 and the dbml | Not updated for the marts yet. Doc 13 was updated on 2026-11-19 and 2026-11-20. Doc 15 still shows D1 and D2 as open. |
 | Many hourly runs | Not tested. The mart was checked on 13 runs, of which only 2026-11-16 has several in one day. |

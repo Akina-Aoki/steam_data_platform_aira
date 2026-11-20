@@ -224,3 +224,108 @@ models:
 
       - name: games_with_discount
         description: How many games in the group have a discount above 0.
+
+
+  - name: mart_genre_comparison
+    description: >
+      (Business): Compares the genres of the catalogue: how many games each genre has,
+      how players feel about them, how many players they have and what they cost.
+      (Technical): One row per genre per run. Built from fact_game_snapshot and dim_game.
+      The genre list of each game is split, so a game with several genres is in several
+      rows. The genres of one run therefore add up to more than the number of games:
+      never add genres together. Percentages come from sums, never from an average
+      of percentages.
+
+    data_tests:
+      # One genre appears once per run. Also fails if a run split into two rows.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - load_id
+              - genre
+
+      # A part of a genre can never be bigger than the genre.
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "coming_soon_games <= game_count and games_with_price <= game_count and games_with_player_data <= game_count"
+
+    columns:
+      - name: load_id
+        description: The dlt load id, so which run the row came from.
+        data_tests:
+          - not_null
+
+      - name: snapshot_date
+        description: The Stockholm day of the run.
+        data_tests:
+          - not_null
+
+      - name: snapshot_hour_local
+        description: The Stockholm hour (0 to 23) in which the run started.
+        data_tests:
+          - not_null
+
+      - name: genre
+        description: One genre from the genre list of a game, for example Strategy. A game with no genre list shows as No genre.
+        data_tests:
+          - not_null
+
+      - name: game_count
+        description: Number of games in the genre in this run, released or not. A game with several genres is counted in each of them, so never add genres together.
+        data_tests:
+          - not_null
+
+      - name: coming_soon_games
+        description: How many of the games in the genre are not released yet. They are in game_count, but have no reviews, players or price.
+
+      - name: total_positive
+        description: Positive reviews of all games in the genre, all time. NULL when no game has review data.
+
+      - name: total_negative
+        description: Negative reviews of all games in the genre, all time. NULL when no game has review data.
+
+      - name: total_reviews
+        description: total_positive plus total_negative. Always shown next to pct_positive.
+
+      - name: pct_positive
+        description: All positive reviews of the genre divided by all its reviews, in percent with one decimal. NULL when there are no reviews, never 0.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: counts_all_languages
+        description: False before 2026-11-02, when Steam counted English reviews only. Do not compare genres across that day.
+
+      - name: recent_positive
+        description: Positive reviews of the last 30 days, all games in the genre. NULL before 2026-11-02.
+
+      - name: recent_negative
+        description: Negative reviews of the last 30 days, all games in the genre. NULL before 2026-11-02.
+
+      - name: recent_total
+        description: recent_positive plus recent_negative. Always shown next to pct_positive_recent.
+
+      - name: pct_positive_recent
+        description: Positive share of the last 30 days, from the sums of the genre, in percent with one decimal. NULL when there are no recent reviews.
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+
+      - name: players_total
+        description: Players of all games in the genre at that run. NULL when no game has player data, 0 is a real zero. Add up games inside one run, never across runs.
+
+      - name: games_with_player_data
+        description: How many games in the genre have a player count in this run.
+
+      - name: avg_player_count
+        description: players_total divided by games_with_player_data, with one decimal. NULL when no game has a player count. Players depend on the hour of the run.
+
+      - name: games_with_price
+        description: How many games in the genre have a price. Free games and games with no price are not counted.
+
+      - name: avg_price_final
+        description: Average price after the discount, in euros, over the games that have a price. Free games and games with no price are not in it.

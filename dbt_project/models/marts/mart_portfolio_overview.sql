@@ -10,7 +10,7 @@
 -- in 2019" or "Free games". We cut the catalogue five ways: by release year, by
 -- price level, free or paid, released or coming soon, and on sale or not.
 --
--- Questions it answers (areas 1, 4 and 5):
+-- Questions it answers (areas 1, 4 and 5) in the MVP:
 --   - How big is the catalogue, and how is it split?
 --   - Which groups are reviewed more positively?
 --   - How many people are playing, and how much does a typical game cost?

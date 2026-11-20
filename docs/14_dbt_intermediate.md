@@ -5,7 +5,7 @@
 The intermediate layer joins and shapes the five staging views. It holds the prep models and the star schema (`fact_game_snapshot`, `dim_game`, `dim_date`). All of it is built as **views** in `STEAM_DB.INTERMEDIATE` ([doc 13](13_conceptual_model.md), section 9).
 
 **Branch:** `feat/one-fact-table` (the first three models were built on `feat/dbt-intermediate`)
-**Status:** The four models are built and tested (`int_steam__games_latest`, `dim_date`, `dim_game`, `fact_game_snapshot`). The whole-project `dbt build` gave `PASS=60 WARN=0 ERROR=0` on 2026-11-16, and again with the same result after the three hourly rounds of that day. History: on 2026-11-06 the single fact was split into three after a tip from my teacher (the commit `71eed57`, still on `main`). On 2026-11-16 I went back to one fact. The marts are not built yet.
+**Status:** The four models are built and tested (`int_steam__games_latest`, `dim_date`, `dim_game`, `fact_game_snapshot`). The whole-project `dbt build` gave `PASS=60 WARN=0 ERROR=0` on 2026-11-16, and again with the same result after the three hourly rounds of that day. History: on 2026-11-06 the single fact was split into three after a tip from my teacher (the commit `71eed57`, still on `main`). On 2026-11-16 I went back to one fact. The three marts were built on 2026-11-19 and 2026-11-20, see [doc 16](16_dbt_marts.md).
 
 `Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate → dbt Marts → Streamlit`
 
@@ -215,7 +215,7 @@ dbt build
 
 | Item | Status |
 |---|---|
-| The marts (`mart_game_detail`, `mart_genre_comparison`) | Not built. Two things are decided first: what the "change" columns compare with, and whether the genre mart is per day or per run ([doc 15](15_hourly_runs_plan.md), D1 and D2). |
+| The marts (`mart_game_detail`, `mart_portfolio_overview`, `mart_genre_comparison`) | **Done on 2026-11-19 and 2026-11-20.** All three are built, tested and merged into `main`. The two open questions were decided: the change compares with the previous run, and the genre mart has one row per genre per run. See [doc 16](16_dbt_marts.md). |
 | Hourly runs | The hand-run test is done: three runs in a row on 2026-11-16 ([doc 15](15_hourly_runs_plan.md)). Dagster comes later. |
 | The three old views `FACT_GAME_STORE`, `FACT_GAME_REVIEWS` and `FACT_GAME_PLAYERS` | **Done on 2026-11-16.** They were left over from the build on 2026-11-06, because dbt does not drop models that were removed. I dropped them as `STEAM_TRANSFORMER`. A second `show views in schema STEAM_DB.INTERMEDIATE` (CSV export) shows only the 4 current views: `DIM_DATE`, `DIM_GAME`, `FACT_GAME_SNAPSHOT` and `INT_STEAM__GAMES_LATEST` ([doc 15](15_hourly_runs_plan.md), step A4). |
 | `metacritic_score` may change between runs | **Checked on 2026-11-06** (read-only query on `STG_STEAM__GAMES`, 8 runs, screenshot of the result). 0 of 81 games changed `name`, `release_date_text`, `required_age`, `metacritic_score`, `website` or `genres`. So they stay in `dim_game`. Only 8 runs over about two weeks, so this is not proof for later. |

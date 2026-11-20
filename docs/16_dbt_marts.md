@@ -6,7 +6,7 @@ The marts are the last layer of dbt. They are tables in `STEAM_DB.MARTS`. Stream
 
 Think of the star in `INTERMEDIATE` as a warehouse, with everything in boxes. A mart is a shelf in the shop, set up to answer one kind of question. The dashboard is a customer who may only walk into the shop.
 
-**Branch:** `feat/dbt-marts`
+**Branch:** `feat/dbt-marts`, merged into `main`.
 **Status (2026-11-20):** all three marts are built, tested and checked: `mart_game_detail` (2026-11-19), `mart_portfolio_overview` and `mart_genre_comparison` (both 2026-11-20).
 
 `Steam Data → dlt → STEAM_RAW → dbt Staging → dbt Intermediate → dbt Marts → Streamlit`
@@ -344,5 +344,5 @@ For now I run `dbt build` by hand after an ingestion run. Dagster does it later,
 | "Which games have the most players now?" (area 2) | A ranking. It clashes with the "no ranking" decision in doc 13. Not decided. |
 | The gap between two runs is not shown | The `hours_since_previous_run` column is not in doc 13, so I left it out. |
 | Most `pct_positive_change` values are 0.0 | With about 139,000 reviews, 10 new ones do not move a percent rounded to one decimal. A `total_reviews_change` column could show it. Not added. |
-| Docs 14 and 15 and the dbml | Not updated for the marts yet. Doc 13 was updated on 2026-11-19 and 2026-11-20. Doc 15 still shows D1 and D2 as open. |
+| The dbml and the logical model picture | They do not show the marts yet. Docs 13, 14 and 15 were updated for the marts on 2026-11-20. |
 | Many hourly runs | Not tested. The mart was checked on 13 runs, of which only 2026-11-16 has several in one day. |

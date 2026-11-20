@@ -1,6 +1,6 @@
 # Plan: One Full Run Every Hour, Scheduled with Dagster
 
-**Status:** Written on 2026-11-16 and updated the same day. Section A (the one-fact model, including A4, the three old views dropped), step B2 and the hand-run test (B3 and B4) are done. Dagster (section C) is postponed. Branch: `feat/one-fact-table`.
+**Status:** Written on 2026-11-16 and updated the same day. Section A (the one-fact model, including A4, the three old views dropped), step B2 and the hand-run test (B3 and B4) are done. Dagster (section C) is postponed. Branch: `feat/one-fact-table`, merged into `main` with PR #18. **Update 2026-11-20:** the three marts are built and merged into `main` ([doc 16](16_dbt_marts.md)), so section D is done.
 
 **For an agent reading this:** read sections 1 to 3 first, then work through section 4 one row at a time, in order. The Status column says where we are. Keep changes to the bare minimum (section 3 lists what must **not** change).
 
@@ -14,7 +14,7 @@
 - Be honest about what is verified and what is not. Give one recommendation, not a menu. Do not reopen decisions marked Agreed.
 - Commit messages need a body and the trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`. Remind me, I forget it.
 
-**Next steps, in order (as of 2026-11-16):** the hand-run test is done (B3 and B4). Next: merge the branch into `main`, then decide the marts (section 4 D, and section 7). Dagster only after I say go.
+**Next steps, in order (as of 2026-11-20):** the star, the hand-run test and the three marts are done and merged into `main`. Next: the dashboard (section E), and the open question about a ranking by players ([doc 16](16_dbt_marts.md), section 11). Dagster only after I say go.
 
 ## 1. The goal
 
@@ -24,7 +24,7 @@ My teacher said the dashboard will be more accurate if the pipeline runs every h
 |---|---|---|
 | Every hour, run the **full** pipeline for **all 81 games**, all five tables | Agreed 2026-11-16 | The dashboard shows one point per hour. It does not split the games across the hours. |
 | The scheduler is **Dagster**, not Airflow | Agreed 2026-11-16. **Postponed the same day.** | My choice. Airflow was only ever "future work" in the docs. For now we develop locally and I start the run by hand every hour. Dagster comes after the hourly runs are proven to work (section C). |
-| One fact table, `fact_game_snapshot`, plus `dim_game` and `dim_date` | Agreed 2026-11-16 | See [doc 13](13_conceptual_model.md). The three-fact version stays in `main` until this branch is merged. |
+| One fact table, `fact_game_snapshot`, plus `dim_game` and `dim_date` | Agreed 2026-11-16 | See [doc 13](13_conceptual_model.md). The branch was merged into `main` with PR #18 on 2026-11-16. The three-fact version is only in the old commit `71eed57`. |
 | No `dim_hour` table, and no hour in `dim_date` | Agreed 2026-11-16 | The dashboard filters by hour with `snapshot_hour_local`, which the mart takes from the fact. `dim_date` stays one row per day. A "part of day" label (morning, afternoon, evening) can be one line of SQL in a mart later, if wanted. |
 
 **Why all 81 games in one run, and not a part per hour:** the fact table joins the four sources on `steam_appid` + `load_id`. That only works when all four tables come from the same complete run. A split run would break that join and the "81 games per run" check.
@@ -33,15 +33,15 @@ My teacher said the dashboard will be more accurate if the pipeline runs every h
 
 | Item | State |
 |---|---|
-| `main` | Three fact tables (`fact_game_store`, `fact_game_reviews`, `fact_game_players`). Not touched. |
-| Branch `feat/one-fact-table` | Created from `main`. Commit `fccb3f8` reverted the three-fact commit `71eed57`. Later commits on the branch: the one-fact model, a commit that stopped tracking `scratch/` (it is now in `.gitignore`), and the A2/A3 work. Check `git log` for what is pushed. |
+| `main` | The one-fact star and the three marts. |
+| Branch `feat/one-fact-table` | Merged into `main` with PR #18 on 2026-11-16. Commit `fccb3f8` reverted the three-fact commit `71eed57`. Later commits on the branch: the one-fact model, a commit that stopped tracking `scratch/` (it is now in `.gitignore`), and the A2/A3 work. |
 | `dim_game.sql` | One row per game, 14 columns: `steam_appid`, `name`, `type`, `release_date`, `release_year`, `release_date_text`, `metacritic_score`, `website`, `short_description`, `developers`, `publishers`, `genres`, `genres_text`, `categories`. The three `platform_*` columns and `required_age` are removed. Built and tested. |
 | `fact_game_snapshot.sql` and its block in `_int_steam__models.yml` | Built and tested. One row per game per run, 19 columns, including `snapshot_hour_local`. |
 | `dbt_project/tests/assert_81_games_per_run.sql` | Re-created for the one fact. Passes. |
 | Data in `fact_game_snapshot` | 13 runs, 81 games each, 1,053 rows (checked 2026-11-16): 10-23, 10-26, 10-27, 10-30, 11-02, 11-03, 11-05, 11-06, 11-11 and four on 11-16 (09:41, 11:43, 12:43 and 13:45). The 09:41 run (`load_id` `1794818498.852425`, run hour 9) was the first hourly-test run. |
 | Ingestion (dlt) | Works. One run = 5 resources, 486 requests, about 21 to 23 minutes (measured 2026-11-02 and on 2026-11-16, [doc 08](08_steam_py_code_guide.md)). Run by hand. |
 | Scheduler | None. |
-| Marts | Not built. |
+| Marts | Built on 2026-11-19 and 2026-11-20 and merged into `main`: `mart_game_detail`, `mart_portfolio_overview` and `mart_genre_comparison`. They are tables. See [doc 16](16_dbt_marts.md). |
 
 ## 3. What does NOT change
 
@@ -55,7 +55,7 @@ This is what keeps things from breaking. Do not touch these.
 | The join on `steam_appid` + `load_id` | Already agreed in [doc 13](13_conceptual_model.md). A second run in one day is already allowed. |
 | The five staging models | They keep `collected_date` (a Stockholm day) and `load_id`. Their `unique` tests use `load_id`, not the date, so hourly runs do not break them. |
 | `dim_date` | Still one row per day. The hour lives in the fact, not in the date dimension. |
-| Intermediate layer as **views** | Views are always fresh, so dbt does not need to run after each ingestion yet. This changes only if the marts become tables. |
+| Intermediate layer as **views** | Views are always fresh, so the star needs no rebuild after an ingestion run. The marts are tables, so they do go old after each run (see the note under section C). |
 | Snowflake setup | The warehouse is `XSMALL` with `AUTO_SUSPEND = 60`. It sleeps between loads. No change. |
 
 ## 4. The change list
@@ -93,14 +93,17 @@ Do not start this until B3 and B4 have passed. Until then the run is started by 
 | C5 | Test: start Dagster, trigger the job by hand once from the web page, and check the new `load_id` has 81 rows in all tables. Only then turn the schedule on. | none | tiny | Not started |
 | C6 | Remove the empty Airflow-style folders `orchestration/dags/.gitkeep` and `docker/.gitkeep` if Dagster does not use them. | those two files | tiny | Not started |
 
-No dbt step is scheduled. The intermediate layer is views, so it is always fresh.
+No dbt step is scheduled yet. The intermediate layer is views, so it is always fresh. The marts are tables, so after each ingestion run I run `dbt build` by hand. When Dagster comes, it also has to run `dbt build` after the ingestion ([doc 16](16_dbt_marts.md), section 9).
 
-### D. Marts (not built yet, so decide before building)
+### D. Marts (done 2026-11-20)
+
+All three marts are built and merged into `main`. The details are in [doc 16](16_dbt_marts.md).
 
 | # | What | Status |
 |---|---|---|
-| D1 | `mart_game_detail`: keep one row per game per run, so there is one point per hour. Decide what "change since the previous run" means now. Versus the previous run is only an hour ago and is often 0. Versus the same hour yesterday may be more useful. | Open |
-| D2 | `mart_genre_comparison`: it is one row per genre per day. With 24 runs a day, decide: per run, or the latest run of each day. | Open |
+| D1 | `mart_game_detail`: what does "change since the previous run" compare with? | **Decided 2026-11-19: the previous run.** The same hour yesterday had no partner in any of the 1,053 rows (checked 2026-11-18). It can be added later as two more columns. |
+| D2 | `mart_genre_comparison`: one row per genre per day, or per run? | **Decided 2026-11-20: per run.** It is the same grain as the other marts, no rule is needed to pick the latest run of a day, and the hour stays next to the player numbers. |
+| D3 | `mart_portfolio_overview` | New mart, added on 2026-11-19 for the business areas 1, 4 and 5. Built on 2026-11-20. |
 
 ### E. Dashboard (later)
 

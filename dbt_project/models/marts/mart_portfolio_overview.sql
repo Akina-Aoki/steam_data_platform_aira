@@ -2,9 +2,25 @@
 -- Layer: MARTS (a table the dashboard reads)
 --
 -- WHAT IT GIVES YOU
--- One row per group per run. A group is, for example, "games released in 2019"
--- or "Free games". It answers questions about the whole catalogue:
--- how big is it, and how do the groups compare (areas 1, 4 and 5).
+-- The big picture of the whole Steam catalogue, for someone who wants to
+-- compare kinds of games, not look at one game at a time.
+--
+-- Each row is one group of games, measured at one run (a run is one moment when
+-- we collected the data from Steam). A group is, for example, "games released
+-- in 2019" or "Free games". We cut the catalogue five ways: by release year, by
+-- price level, free or paid, released or coming soon, and on sale or not.
+--
+-- Questions it answers (areas 1, 4 and 5):
+--   - How big is the catalogue, and how is it split?
+--   - Which groups are reviewed more positively?
+--   - How many people are playing, and how much does a typical game cost?
+--   - How many games are on sale?
+--
+-- WHY IT IS BUILT THIS WAY
+-- The dashboard shows totals and comparisons, not single games. So we do the
+-- counting once, here, and the dashboard only reads a small, ready-made table.
+-- Every chart then uses the same numbers, and nobody has to repeat the maths.
+-- We keep one row per run, so the same group can be followed over time.
 --
 -- HOW IT IS BUILT
 -- Each step below is a CTE: a small named table that the next step reads.
@@ -111,14 +127,13 @@ labelled as (
 
 -- STEP 4: stack five copies of the games.
 -- WHY: we want to do the same counting five times, once for each way of splitting.
--- We could write the whole counting step five times. Instead we make five copies of
--- the games first. Each copy gets a name for the split (group_type) and its own
--- label (group_value). Then ONE group-by in the next step does all the work.
--- Think of five photocopies of a class list, each one with a different column
--- to sort by.
+-- We could write the whole counting step five times. Instead we make five copies of the games first.
+-- Each copy gets a name for the split (group_type) and its own label (group_value). 
+-- Then ONE group-by in the next step does all the work.
+-- Think of five photocopies of a class list, each one with a different column to sort by.
 --
--- union all glues tables on top of each other. "all" keeps every row. Plain
--- "union" would remove rows that look the same, and that would delete games.
+-- union all glues tables on top of each other. "all" keeps every row.
+-- Plain "union" would remove rows that look the same, and that would delete games.
 -- The columns must be in the same order in every part. The star at the end of each
 -- part gives the same columns in the same order every time.
 --
@@ -141,8 +156,8 @@ stacked as (
 ),
 
 -- STEP 5: group and add up.
--- group by means: make ONE row for every different combination of the columns
--- listed. Here that is one row per run, per group type, per group value.
+-- group by means: make ONE row for every different combination of the columns listed. 
+-- Here that is one row per run, per group type, per group value.
 -- Every other column must be inside an aggregate (count, sum, avg): a function
 -- that turns many rows into one number.
 --
@@ -150,6 +165,7 @@ stacked as (
 --   load_id                 so groups of different runs never mix
 --   group_type, group_value so each group gets its own row
 --   snapshot_date, snapshot_hour_local, counts_all_languages
+
 --       They are the same for every game of a run, so they do not split a run.
 --       They are in group by only because we want them in the result.
 --       If a run ever had two values, it would split into two rows, and the
@@ -198,13 +214,12 @@ grouped as (
 
 -- STEP 6: work out the percentages and the totals.
 -- WHY here and not in step 5: a percentage needs the SUM of the whole group,
--- and the sums only exist after step 5. A separate step also keeps each step
--- small. This is rule 1: all positive reviews of the group divided by all its
--- reviews. An average of the percentages of the games would treat a game with
+-- and the sums only exist after step 5. A separate step also keeps each step small.
+-- This is rule 1: all positive reviews of the group divided by all its reviews.
+-- An average of the percentages of the games would treat a game with
 -- 3 reviews like a game with 30,000.
 -- nullif(a, b) gives NULL when a equals b. A total of 0 becomes NULL, and a
--- division by NULL gives NULL. So a group with no reviews gets NULL, not an
--- error and not a fake 0 percent.
+-- division by NULL gives NULL. So a group with no reviews gets NULL, not an error and not a fake 0 percent.
 final as (
 
     select

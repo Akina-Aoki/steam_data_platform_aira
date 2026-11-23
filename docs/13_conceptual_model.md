@@ -121,7 +121,7 @@ The conceptual model shows everything we talk about. The logical model (next par
 
 ![Logical model: fact_game_snapshot in the middle, linked to dim_game and dim_date](../assets/logical_model_1.png)
 
-The picture shows the star only. The marts are not drawn and are not in the dbml until they are built.
+The picture shows the star only. The three marts have their own picture, `assets/marts.png`, drawn from `dbt_project/models/marts/marts.dbml` (see [doc 16](16_dbt_marts.md)).
 
 
 ### 6.3 What changed from the conceptual model to the logical one
@@ -174,7 +174,7 @@ Not part of the star. **Built on 2026-11-20**, see [doc 16](16_dbt_marts.md). It
 
 #### `mart_game_detail` (one game in one run, for the game page)
 
-Not part of the star. It is the table Streamlit reads for one game, because the dashboard reads `MARTS` only. It has the same grain as the fact, one row per game per run, and it reads `fact_game_snapshot` and `dim_game`. The fact stores counts, so the percentages and the changes are worked out here. **Built on 2026-11-19** with these 20 columns, see [doc 16](16_dbt_marts.md). The marts are not in the dbml yet.
+Not part of the star. It is the table Streamlit reads for one game, because the dashboard reads `MARTS` only. It has the same grain as the fact, one row per game per run, and it reads `fact_game_snapshot` and `dim_game`. The fact stores counts, so the percentages and the changes are worked out here. **Built on 2026-11-19** with these 20 columns, see [doc 16](16_dbt_marts.md). The marts have their own dbml, `marts.dbml`, in the marts folder.
 
 | Group | Columns | Note |
 |---|---|---|

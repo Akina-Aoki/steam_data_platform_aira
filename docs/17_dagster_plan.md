@@ -138,7 +138,7 @@ The first step is the same for all options. Neither of my lab repos shows an app
 3. **The data changes every hour.** Making the vectors again every hour costs API calls and time. The lecture waits 30 seconds between documents because of rate limits. With about 100 texts, that is far too slow. I would only embed what changed, and I check the limits of the paid plan.
 4. **Cost and keys.** The calls are paid. The keys stay in `.env` and never go into git.
 5. **My dashboard rules also apply to the chatbot.** I decided on no ranking of games. A chatbot asked to rank games would break that. Not decided.
-6. **Scope.** The chatbot is not in my PDF and not in the 220-hour estimate. I ask my teacher if it is required or a bonus.
+6. **Scope.** The chatbot is not in my PDF and not in the 220-hour estimate. It is my own choice: not required, and not a bonus. So it comes last and must not take time from the thesis.
 
 **If I do it, the steps are:** (R1) decide what text to make from the marts, (R2) build the data frames with SQL, (R3) put them into LanceDB, (R4) build the RAG agent, (R5) add a chat box to the Streamlit app, (R6) add a third Dagster step that updates the vectors after `dbt build`, (R7) deploy. Dagster can get the third step later, so the plan in section 4 does not block it.
 
@@ -164,6 +164,6 @@ I read the Dagster parts of both repos on 2026-11-23. I did not read every file.
 | Plain steps or assets | I start with plain steps. See section 4. |
 | Where the code lives | Recommended: inside the package |
 | Where the Streamlit app runs | Decided: on my PC. Inside Snowflake, for the dashboard only, is an option for later. See 6.2. |
-| Is the chatbot required or a bonus? | Ask my teacher. See 6.3. |
+| Is the chatbot required? | No. It is my own choice. It is not required and not a bonus, so it must not take time from the thesis. See 6.3. |
 | What the chatbot can answer | Text only, or also numbers with a read-only SQL tool. See 6.3. |
 | A freshness check (a warning when the newest run is more than 2 hours old) | Later, not part of the minimum |

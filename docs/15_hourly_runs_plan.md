@@ -1,6 +1,6 @@
 # Plan: One Full Run Every Hour, Scheduled with Dagster
 
-**Status:** Written on 2026-11-16 and updated the same day. Section A (the one-fact model, including A4, the three old views dropped), step B2 and the hand-run test (B3 and B4) are done. Dagster (section C) is postponed. Branch: `feat/one-fact-table`, merged into `main` with PR #18. **Update 2026-11-20:** the three marts are built and merged into `main` ([doc 16](16_dbt_marts.md)), so section D is done.
+**Status:** Written on 2026-11-16, updated the same day, and again on 2026-11-20 and 2026-11-23. Section A (the one-fact model, including A4, the three old views dropped), step B2 and the hand-run test (B3 and B4) are done. Dagster (section C) is postponed. Branch: `feat/one-fact-table`, merged into `main` with PR #18. **Update 2026-11-20:** the three marts are built and merged into `main` ([doc 16](16_dbt_marts.md)), so section D is done.
 
 **For an agent reading this:** read sections 1 to 3 first, then work through section 4 one row at a time, in order. The Status column says where we are. Keep changes to the bare minimum (section 3 lists what must **not** change).
 
@@ -75,14 +75,14 @@ Do these in order. Each row is a small step. Mark the Status column as we go.
 
 | # | What | Files | Size | Status |
 |---|---|---|---|---|
-| B1 | No code change. Check `run_steam_pipeline()` is the one function Dagster will call. It returns `LoadInfo`. After it, Dagster must call `load_info.raise_on_failed_jobs()` like `pipelines_steam.py` does, so a failed load shows as a failed Dagster run. | none | tiny | Not started |
+| B1 | No code change. Check `run_steam_pipeline()` is the one function Dagster will call. It returns `LoadInfo`. After it, Dagster must call `load_info.raise_on_failed_jobs()` like `pipelines_steam.py` does, so a failed load shows as a failed Dagster run. | none | tiny | **Done 2026-11-23** (I read `pipelines_steam.py`). `run_steam_pipeline()` returns `LoadInfo`, and `raise_on_failed_jobs()` is called after it only in the `__main__` block, so Dagster has to call it too. |
 | B2 | Time one full run on this machine and write the number in this doc. A run must finish well before the next hour starts. About 21 minutes so far. | this doc | tiny | **Done 2026-11-16.** The run with `load_id` `1794818498.852425` started at 09:41 and finished at 10:02 (Stockholm time), so about 21 minutes. All four tables have 81 rows for it. |
 | B3 | **Hand-run test:** start the pipeline by hand at the same minute of 3 hours in a row. After each run, check in Snowflake that the new `load_id` has 81 rows in `games`, `review_summary`, `player_counts` and `review_recent`, and look in the log for any 429 line. | none, commands only | small | **Done 2026-11-16.** The first test run was at 09:41 (`load_id` `1794818498.852425`), but the hour 10 was skipped, so I counted a new test of three runs in a row, one hour apart: 11:43 (`1794825794.9216492`), 12:43 (`1794829390.4537466`) and 13:45 (`1794833102.0641682`, two minutes late). Each one has 81 rows in all four raw tables (checked in Snowflake). The three runs took about 21, 23 and 22 minutes, so each ended well before the next hour. **429:** the log of the 13:45 run was saved, and a search for `429` and `waiting` found 0 lines. The 09:41 run had no 429. The 11:43 and 12:43 runs had no saved log, so a retried 429 is **not checked** for them (a 429 that fixes itself leaves nothing in Snowflake). Start times of the last two are worked out from the `load_id`. |
 | B4 | After the 3 runs: `dbt build` for the whole project, and check that every test passes, that `fact_game_snapshot` has 3 new runs of 81 rows, and that no `unique` test fails. | none | tiny | **Done 2026-11-16**, after the three runs. The whole-project `dbt build` gave `PASS=60 WARN=0 ERROR=0 SKIP=0` (I saw the last line of the output only). SQL checks in `SQL/01_star_checks.ipynb`: the fact has 13 runs and 1,053 rows (13 x 81), no duplicates and no run with a number of games other than 81. |
 
-### C. Dagster (the scheduler): postponed
+### C. Dagster (the scheduler): next
 
-Do not start this until B3 and B4 have passed. Until then the run is started by hand every hour.
+B3 and B4 have passed, so this is the next task. The detailed plan, in plain words, is in [doc 17](17_dagster_plan.md). Until the schedule is on, I start the run by hand.
 
 | # | What | Files | Size | Status |
 |---|---|---|---|---|
@@ -120,9 +120,10 @@ Only after the code step they describe is done. These docs say "once a day" or "
 | [05](05_games__dlt_ingestion.md), [06](06_reviews__dlt_ingestion.md), [07](07_player_counts__dlt_ingestion.md) | **Done 2026-11-16.** "How to run" now says once per hour at most, the one-run-per-day rules say one run every hour, and Airflow is now Dagster later. |
 | [09](09_key_pair_login.md) | **Done 2026-11-16.** "Once an hour at most", and Airflow is now Dagster. The 2026-10-30 run is still called a daily run, because it was one. |
 | [01](01_infra_setup.md) | **Done 2026-11-16.** Airflow in Docker is now Dagster, one run every hour. |
-| `logical_model.dbml` and `assets/logical_model_1.png` | **Done.** The dbml and the png are both the new version (checked 2026-11-16 by looking at the picture): `dim_date` 7 columns, `dim_game` 14, `fact_game_snapshot` 19 with `snapshot_hour_local`, two links, no marts. |
+| `logical_model.dbml` and `assets/logical_model_1.png` | **Done.** The dbml and the png are both the new version (checked 2026-11-16 by looking at the picture): `dim_date` 7 columns, `dim_game` 14, `fact_game_snapshot` 19 with `snapshot_hour_local`, two links, no marts. Checked again on 2026-11-23: they still show the star only, on purpose. The three marts have their own files: `dbt_project/models/marts/marts.dbml` and `assets/marts.png` (three tables with 20 columns each, no links). |
 | `_int_steam__models.yml` | **Done 2026-11-18.** I wrote on 2026-11-16 that the `dim_game` description was fixed and committed, but on 2026-11-18 the file still said "store info, platforms, lists". I removed the word "platforms" by hand on 2026-11-18. The whole-project `dbt build` on 2026-11-19 read the file with no error (`PASS=73 WARN=0 ERROR=0`). |
-| [13](13_conceptual_model.md) and [14](14_dbt_intermediate.md) | **Done 2026-11-16.** Both now describe the one fact, the 14 columns of `dim_game`, `snapshot_hour_local`, 10 runs and the hourly plan. Doc 14 has a new section for `fact_game_snapshot`, so its later sections moved from 5, 6, 7 to 6, 7, 8. The caption of the picture in doc 13 is updated and the png is the new version. **Updated again 2026-11-16** after the three hourly rounds: both docs now say 13 runs, and that two runs in one day were tested. |
+| [13](13_conceptual_model.md) and [14](14_dbt_intermediate.md) | **Done 2026-11-16.** Both now describe the one fact, the 14 columns of `dim_game`, `snapshot_hour_local`, 10 runs and the hourly plan. Doc 14 has a new section for `fact_game_snapshot`, so its later sections moved from 5, 6, 7 to 6, 7, 8. The caption of the picture in doc 13 is updated and the png is the new version. **Updated again 2026-11-16** after the three hourly rounds: both docs now say 13 runs, and that two runs in one day were tested. **Updated again 2026-11-20** for the three marts. |
+| [16](16_dbt_marts.md) | **New 2026-11-19**, updated 2026-11-20 for all three marts: columns, tests, what was checked and the decisions. |
 
 ## 6. Things to remember
 
@@ -142,6 +143,6 @@ Only after the code step they describe is done. These docs say "once a day" or "
 
 | # | Question | Options |
 |---|---|---|
-| 1 | Where does Dagster run? | (a) On this PC with `dagster dev`, fine for testing, but the PC must stay on. (b) In Docker on this PC, same problem. (c) On an always-on machine or a Dagster cloud service, which may cost money. |
+| 1 | Where does Dagster run? | **Decided 2026-11-23: on this PC with `dagster dev`, which stays on 24/7** (I talked to my teacher). The cloud (maybe Azure) is for later. |
 | 2 | Where does the Dagster code live? | Inside the package (`src/steam_data_platform/orchestration/`) or in the top-level `orchestration/` folder |
 | 3 | Do we want a "freshness" check that warns when the newest run is more than 2 hours old? | Later, as a dbt source freshness check. Not part of the bare minimum. |

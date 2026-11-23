@@ -1,0 +1,90 @@
+// Logical model of the three marts (MARTS schema).
+// The marts are not part of the star, so they have no links.
+// They read from fact_game_snapshot and dim_game (see logical_model.dbml in the intermediate folder).
+
+Table mart_game_detail {
+  steam_appid int [not null]
+  load_id varchar [not null, note: 'Which dlt run the row came from']
+  snapshot_date date [not null, note: 'Stockholm day of the run']
+  snapshot_hour_local int [not null, note: 'Stockholm hour (0 to 23) in which the run started']
+  name varchar [not null, note: 'From dim_game']
+  genres_text varchar [note: 'For example Strategy, Simulation. NULL when a game has no genres']
+  coming_soon boolean [not null]
+  is_free boolean [not null]
+  price_initial decimal(10,2) [note: 'NULL = no price, never 0']
+  price_final decimal(10,2)
+  discount_percent int [note: '0 = no discount, NULL = no value']
+  total_reviews int [note: 'Positive plus negative, all time. Always shown next to pct_positive']
+  pct_positive decimal [note: 'From counts. NULL when there are no reviews, never 0']
+  recent_total int [note: 'Last 30 days. NULL before 2026-11-02']
+  pct_positive_recent decimal
+  counts_all_languages boolean [note: 'false before 2026-11-02']
+  player_count int [note: 'NULL = no data, 0 = real zero']
+  collected_hour_local int [note: 'Stockholm hour of the player count']
+  pct_positive_change decimal [note: 'This run minus the previous run of the same game. NULL if no earlier run, a missing value or a language switch']
+  player_count_change int [note: 'Same rule as pct_positive_change']
+
+  indexes {
+    (steam_appid, load_id) [pk]
+  }
+
+  Note: 'One row per game per run, for the game page. Percentages and changes are worked out here from the counts in the fact.'
+}
+
+Table mart_portfolio_overview {
+  load_id varchar [not null]
+  snapshot_date date [not null]
+  snapshot_hour_local int [not null]
+  group_type varchar [not null, note: 'release_year, price_level, free_or_paid, status or has_discount']
+  group_value varchar [not null, note: 'For example 2019, Under 10, Free, Released, Discount']
+  game_count int [not null, note: 'Games in the group. Inside one group_type it adds up to all games of the run']
+  total_positive int
+  total_negative int
+  total_reviews int
+  pct_positive decimal [note: 'All positive divided by all reviews of the group. Never an average of percents']
+  counts_all_languages boolean
+  recent_positive int
+  recent_negative int
+  recent_total int
+  pct_positive_recent decimal
+  players_total int [note: 'Added up inside one run, never across runs']
+  games_with_player_data int
+  games_with_price int
+  avg_price_final decimal(10,2) [note: 'Over games that have a price. Free games are not in it']
+  games_with_discount int
+
+  indexes {
+    (load_id, group_type, group_value) [pk]
+  }
+
+  Note: 'One row per group per run: the catalogue split five ways. Never add different group types together.'
+}
+
+Table mart_genre_comparison {
+  load_id varchar [not null]
+  snapshot_date date [not null]
+  snapshot_hour_local int [not null]
+  genre varchar [not null, note: 'One genre from the genre list. No genre if a game has none']
+  game_count int [not null, note: 'Games in the genre, released or not. A game with several genres is in each of them']
+  coming_soon_games int
+  total_positive int
+  total_negative int
+  total_reviews int
+  pct_positive decimal
+  counts_all_languages boolean
+  recent_positive int
+  recent_negative int
+  recent_total int
+  pct_positive_recent decimal
+  players_total int
+  games_with_player_data int
+  avg_player_count decimal [note: 'players_total divided by games_with_player_data']
+  games_with_price int
+  avg_price_final decimal(10,2)
+
+  indexes {
+    (load_id, genre) [pk]
+  }
+
+  Note: 'One row per genre per run. The genre rows of a run add up to more than the number of games, so never add genres together.'
+}

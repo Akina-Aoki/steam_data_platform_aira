@@ -23,6 +23,10 @@ The design (business areas, grain) is in [doc 13](13_conceptual_model.md). This 
 
 Mart 2 is new. Doc 13 only had the game mart and the genre mart. I added it because areas 1, 4 and 5 compare **groups** of games, and a table with one row per game does not give a group percent from sums. Doc 13 now has it (section 6.4 and section 9).
 
+![Logical model of the three marts: mart_genre_comparison, mart_portfolio_overview and mart_game_detail, with their columns and keys](../assets/marts.png)
+
+The picture shows the three marts with their 20 columns each and their keys. The source is [`marts.dbml`](../dbt_project/models/marts/marts.dbml), drawn on dbdiagram.io. The marts have no arrows, because they read from the star but are not part of it. The star has its own picture in [doc 13](13_conceptual_model.md), section 6.2.
+
 Every mart does the same three things:
 
 1. It reads only the star (`fact_game_snapshot`, `dim_game`), never raw data.
@@ -295,7 +299,7 @@ The file has a comment above each step.
 
 ### Good to know when reading it
 
-- **Small genres are noisy.** Five of the 12 genres hold 1 to 3 games. The percent of a 1-game genre is that one game. The count always sits next to the percent.
+- **Small genres are noisy.** Six of the 12 genres hold 1 to 3 games. The percent of a 1-game genre is that one game. The count always sits next to the percent.
 - **The player average can be misleading.** In a genre with many games, a few popular games can pull the average up. I have not checked this with the data.
 - **Do not add genres together**, and do not compare a genre with the whole catalogue by adding up the rows.
 
@@ -305,6 +309,12 @@ From the `dbt_project/` folder:
 
 ```bash
 uv run --env-file ../.env dbt build --select mart_game_detail
+```
+
+All three marts at once:
+
+```bash
+uv run --env-file ../.env dbt build --select mart_game_detail mart_portfolio_overview mart_genre_comparison
 ```
 
 Or the whole project: `uv run --env-file ../.env dbt build`.
@@ -340,9 +350,7 @@ For now I run `dbt build` by hand after an ingestion run. Dagster does it later,
 | Years in `mart_portfolio_overview` | Many years hold only 2 or 3 games, so a percent per year is noisy. If the dashboard looks jumpy, years could be grouped into periods. That would be a display choice. Not decided. |
 | Price band and discount together | Not planned. The mart groups by one thing at a time. |
 | The player average per genre | I have not checked how much a few big games pull it up. A median could be shown instead. Not decided. |
-| `mart_genre_comparison` | Not built, last. D2 is open: per run, or the latest run of each day. |
 | "Which games have the most players now?" (area 2) | A ranking. It clashes with the "no ranking" decision in doc 13. Not decided. |
 | The gap between two runs is not shown | The `hours_since_previous_run` column is not in doc 13, so I left it out. |
 | Most `pct_positive_change` values are 0.0 | With about 139,000 reviews, 10 new ones do not move a percent rounded to one decimal. A `total_reviews_change` column could show it. Not added. |
-| The dbml and the logical model picture | They do not show the marts yet. Docs 13, 14 and 15 were updated for the marts on 2026-11-20. |
 | Many hourly runs | Not tested. The mart was checked on 13 runs, of which only 2026-11-16 has several in one day. |

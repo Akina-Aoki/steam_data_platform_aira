@@ -38,3 +38,7 @@ dashboard = [
     "snowflake-connector-python[pandas]>=4.8.0",
     "streamlit>=1.66.0",
 ]
+orchestration = [
+    "dagster>=1.13.31",
+    "dagster-webserver>=1.13.31",
+]

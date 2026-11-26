@@ -77,4 +77,4 @@ The overall workflow will be:
 
 **Steam Data Source → Python + dlt → Snowflake Raw → dbt → Analytics Marts → Streamlit**
 
-Later, we'll use Dagster to schedule the ingestion. The plan is one full run every hour ([doc 15](15_hourly_runs_plan.md)). For now I start every run by hand. The dbt models are views, so dbt does not need a schedule yet.
+Stage 2 adds Dagster on my PC, with one full run every hour: ingestion, then `dbt build` ([doc 15](15_hourly_runs_plan.md), [doc 17](17_dagster_plan.md)). There is no Docker and no Postgres in Stage 2. The Streamlit dashboard is built on my PC first and then runs inside Snowflake. For now I start every run by hand. The staging and intermediate models are views, but the marts are tables, so `dbt build` has to run after every ingestion run.

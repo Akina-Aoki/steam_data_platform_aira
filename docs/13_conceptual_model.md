@@ -271,7 +271,7 @@ This is why `games` is the base of the fact table. The other tables are joined t
 | A third mart, `mart_portfolio_overview`, for areas 1, 4 and 5 | Agreed 2026-11-19 | These areas compare groups of games. A group percent must come from sums (all positive ÷ all reviews), which belongs in a mart. `mart_game_detail` has one row per game and cannot give it. |
 | "Change since the previous run" compares with the **previous run** (D1) | Agreed 2026-11-19 | It works today, and it matches my PDF ("from one run to the next"). "Same hour yesterday" had no partner in 1,053 rows (checked 2026-11-18). It can be added later as two more columns. |
 | `mart_game_detail` has the 20 columns of section 6.4 | Agreed and built 2026-11-19 | See [doc 16](16_dbt_marts.md). |
-| The marts are rebuilt by hand with `dbt build` for now | Agreed 2026-11-19 | A mart is a table, so it goes old after each ingestion run. Dagster does it later, and the cloud (maybe Azure) after that. |
+| The marts are rebuilt by hand with `dbt build` for now | Agreed 2026-11-19 | A mart is a table, so it goes old after each ingestion run. Dagster does it in Stage 2 ([doc 17](17_dagster_plan.md)). |
 | Price bands in `mart_portfolio_overview`: Under 10, 10 to 19.99, 20 to 39.99, 40 and above, plus Free and No price | Agreed 2026-11-19 | Based on the regular price (`price_initial`), so a sale does not move a game. The edges are fixed, so the history of a chart never changes. In the newest run the paid bands hold 27, 19, 16 and 11 games. 59.99 (2 games) is not its own band, because 2 games are noise. |
 | `mart_genre_comparison` has one row per genre per run (D2) | Agreed 2026-11-20 | Same grain as the other marts, no rule for picking a run, and the hour stays next to the player numbers. Doc 13 first said one genre per day. |
 | Unreleased games count in the genre `game_count`, with a column `coming_soon_games` | Agreed 2026-11-20 | Area 1 needs the whole catalogue by genre. They add only NULL to reviews, players and price, so no comparison changes. |
@@ -286,7 +286,7 @@ This is why `games` is the base of the fact table. The other tables are joined t
 | "Franchise" comparison (business area and dimension) | Dropped, see section 9. The area is now genre comparison only. |
 | Rankings of games by sentiment and a list of games with falling sentiment or players | Not planned. The dashboard shows one game at a time, see section 9. Areas 3 and 7 are reworded to match. |
 | "player reviews" as a source | We load review totals only, not single reviews |
-| Airflow as Stage 2 | Dagster instead, and later. Runs are done by hand for now, planned every hour ([doc 15](15_hourly_runs_plan.md)). |
+| Airflow, PostgreSQL and Docker Compose as Stage 2 | Dagster instead, on my PC, with no Postgres and no Docker (decided 2026-11-26). Runs are done by hand for now, planned every hour ([doc 15](15_hourly_runs_plan.md), [doc 17](17_dagster_plan.md)). The dashboard ends up inside Snowflake. |
 
 ## 11. Next steps
 

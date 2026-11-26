@@ -1,6 +1,6 @@
 # Plan: One Full Run Every Hour, Scheduled with Dagster
 
-**Status:** Written on 2026-11-16, updated the same day, and again on 2026-11-20 and 2026-11-23. Section A (the one-fact model, including A4, the three old views dropped), step B2 and the hand-run test (B3 and B4) are done. Dagster (section C) is postponed. Branch: `feat/one-fact-table`, merged into `main` with PR #18. **Update 2026-11-20:** the three marts are built and merged into `main` ([doc 16](16_dbt_marts.md)), so section D is done.
+**Status:** Written on 2026-11-16, updated the same day, and again on 2026-11-20 and 2026-11-23. Section A (the one-fact model, including A4, the three old views dropped), step B2 and the hand-run test (B3 and B4) are done. Dagster (section C) is next, and C1 is done. Branch: `feat/one-fact-table`, merged into `main` with PR #18. **Update 2026-11-20:** the three marts are built and merged into `main` ([doc 16](16_dbt_marts.md)), so section D is done. **Update 2026-11-26:** Dagster (section C) is the next task again. Docker, Postgres and Airflow are not part of Stage 2, and the dashboard ends up inside Snowflake ([doc 17](17_dagster_plan.md)).
 
 **For an agent reading this:** read sections 1 to 3 first, then work through section 4 one row at a time, in order. The Status column says where we are. Keep changes to the bare minimum (section 3 lists what must **not** change).
 
@@ -14,7 +14,7 @@
 - Be honest about what is verified and what is not. Give one recommendation, not a menu. Do not reopen decisions marked Agreed.
 - Commit messages need a body and the trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`. Remind me, I forget it.
 
-**Next steps, in order (as of 2026-11-20):** the star, the hand-run test and the three marts are done and merged into `main`. Next: the dashboard (section E), and the open question about a ranking by players ([doc 16](16_dbt_marts.md), section 11). Dagster only after I say go.
+**Next steps, in order (as of 2026-11-26):** the star, the hand-run test and the three marts are done and merged into `main`. Next: Dagster (section C and [doc 17](17_dagster_plan.md)), then the dashboard (section E), first on my PC and then inside Snowflake. The open question about a ranking by players ([doc 16](16_dbt_marts.md), section 11) stays open.
 
 ## 1. The goal
 
@@ -23,7 +23,7 @@ My teacher said the dashboard will be more accurate if the pipeline runs every h
 | Decision | Status | Reason |
 |---|---|---|
 | Every hour, run the **full** pipeline for **all 81 games**, all five tables | Agreed 2026-11-16 | The dashboard shows one point per hour. It does not split the games across the hours. |
-| The scheduler is **Dagster**, not Airflow | Agreed 2026-11-16. **Postponed the same day.** | My choice. Airflow was only ever "future work" in the docs. For now we develop locally and I start the run by hand every hour. Dagster comes after the hourly runs are proven to work (section C). |
+| The scheduler is **Dagster**, not Airflow | Agreed 2026-11-16. Postponed the same day. **Picked up again 2026-11-23**, after the hourly runs were proven by hand. | My choice. Airflow was only ever "future work" in the docs. It is not part of Stage 2, and neither are Postgres and Docker (decided 2026-11-26). Dagster runs on my PC (section C). |
 | One fact table, `fact_game_snapshot`, plus `dim_game` and `dim_date` | Agreed 2026-11-16 | See [doc 13](13_conceptual_model.md). The branch was merged into `main` with PR #18 on 2026-11-16. The three-fact version is only in the old commit `71eed57`. |
 | No `dim_hour` table, and no hour in `dim_date` | Agreed 2026-11-16 | The dashboard filters by hour with `snapshot_hour_local`, which the mart takes from the fact. `dim_date` stays one row per day. A "part of day" label (morning, afternoon, evening) can be one line of SQL in a mart later, if wanted. |
 
@@ -86,12 +86,12 @@ B3 and B4 have passed, so this is the next task. The detailed plan, in plain wor
 
 | # | What | Files | Size | Status |
 |---|---|---|---|---|
-| C1 | Add a new dependency group `orchestration` with `dagster` and `dagster-webserver` to `pyproject.toml`, then `uv sync`. Check the current Dagster docs for versions when we do this step. | `pyproject.toml`, `uv.lock` | small | Not started |
+| C1 | Add a new dependency group `orchestration` with `dagster` and `dagster-webserver` to `pyproject.toml`, then `uv sync`. Check the current Dagster docs for versions when we do this step. | `pyproject.toml`, `uv.lock` | small | **Group added** (commit `c8d826a`). `pyproject.toml` has `dagster` and `dagster-webserver` in the group `orchestration` (read 2026-11-26). Not checked: `uv sync` and `uv run dagster --version`. |
 | C2 | Create the Dagster definitions: one job (or one asset) that calls `run_steam_pipeline()` and `raise_on_failed_jobs()`, and one schedule with the cron `0 * * * *` (every hour on the hour), time zone `Europe/Stockholm`. | new file, for example `src/steam_data_platform/orchestration/definitions.py` | small | Not started |
 | C3 | Make sure only **one run at a time** can happen, so a slow run never overlaps the next one. | Dagster config (`dagster.yaml`) | small | Not started |
 | C4 | Pass the Snowflake settings to Dagster: start it with the same `.env` as the pipeline (`uv run --env-file .env dagster dev ...`). The private key file path is read from the environment by `connections.py`. | none, command only | tiny | Not started |
 | C5 | Test: start Dagster, trigger the job by hand once from the web page, and check the new `load_id` has 81 rows in all tables. Only then turn the schedule on. | none | tiny | Not started |
-| C6 | Remove the empty Airflow-style folders `orchestration/dags/.gitkeep` and `docker/.gitkeep` if Dagster does not use them. | those two files | tiny | Not started |
+| C6 | Remove the empty Airflow-style folders `orchestration/dags/.gitkeep` and `docker/.gitkeep` Dagster does not use them, and Docker is not part of Stage 2 (decided 2026-11-26). | those two files | tiny | Not started |
 
 No dbt step is scheduled yet. The intermediate layer is views, so it is always fresh. The marts are tables, so after each ingestion run I run `dbt build` by hand. When Dagster comes, it also has to run `dbt build` after the ingestion ([doc 16](16_dbt_marts.md), section 9).
 
@@ -110,6 +110,7 @@ All three marts are built and merged into `main`. The details are in [doc 16](16
 | # | What | Status |
 |---|---|---|
 | E1 | Time axis uses `snapshot_date` and `snapshot_hour_local`, or the timestamp `collected_at_utc` in Stockholm time. | Later |
+| E2 | Build the dashboard on my PC first, then deploy it inside Snowflake (Streamlit in Snowflake), owned by `STEAM_REPORTER`. Details in [doc 17](17_dagster_plan.md), section 6.2. | Later, after Dagster |
 
 ## 5. Docs that must be updated
 
@@ -124,12 +125,13 @@ Only after the code step they describe is done. These docs say "once a day" or "
 | `_int_steam__models.yml` | **Done 2026-11-18.** I wrote on 2026-11-16 that the `dim_game` description was fixed and committed, but on 2026-11-18 the file still said "store info, platforms, lists". I removed the word "platforms" by hand on 2026-11-18. The whole-project `dbt build` on 2026-11-19 read the file with no error (`PASS=73 WARN=0 ERROR=0`). |
 | [13](13_conceptual_model.md) and [14](14_dbt_intermediate.md) | **Done 2026-11-16.** Both now describe the one fact, the 14 columns of `dim_game`, `snapshot_hour_local`, 10 runs and the hourly plan. Doc 14 has a new section for `fact_game_snapshot`, so its later sections moved from 5, 6, 7 to 6, 7, 8. The caption of the picture in doc 13 is updated and the png is the new version. **Updated again 2026-11-16** after the three hourly rounds: both docs now say 13 runs, and that two runs in one day were tested. **Updated again 2026-11-20** for the three marts. |
 | [16](16_dbt_marts.md) | **New 2026-11-19**, updated 2026-11-20 for all three marts: columns, tests, what was checked and the decisions. |
+| [01](01_infra_setup.md), [13](13_conceptual_model.md), [16](16_dbt_marts.md), [17](17_dagster_plan.md) | **Done 2026-11-26.** Dagster is Stage 2 (not "later" or "the cloud, maybe Azure"). No Docker, Postgres or Airflow. The dashboard ends up inside Snowflake. |
 
 ## 6. Things to remember
 
 | Topic | What to remember |
 |---|---|
-| **Dagster must be running** | A schedule only fires while the Dagster process (`dagster dev`) is running. If this PC is asleep or off, hours are skipped. Where Dagster runs is an open decision (section 7). |
+| **Dagster must be running** | A schedule only fires while the Dagster process (`dagster dev`) is running. If this PC is asleep or off, hours are skipped. Dagster runs on this PC (decided 2026-11-23, section 7). |
 | **Missed hours are normal** | Gaps will happen. Charts must not draw a straight line over a gap as if it were a trend. Use markers. |
 | **A failed run loads nothing** | If Steam answers 429 three times, the run stops before loading. There is no half run. That hour is simply missing. A single game that fails is skipped, so that run has fewer than 81 rows, and the 81-games test warns. |
 | **A run takes about 21 to 23 minutes** | The run hour comes from the `games` timestamp, taken at the start of the run, so start the schedule on the hour (cron `0 * * * *`). The player counts come up to about 20 minutes later. |
@@ -143,6 +145,6 @@ Only after the code step they describe is done. These docs say "once a day" or "
 
 | # | Question | Options |
 |---|---|---|
-| 1 | Where does Dagster run? | **Decided 2026-11-23: on this PC with `dagster dev`, which stays on 24/7** (I talked to my teacher). The cloud (maybe Azure) is for later. |
+| 1 | Where does Dagster run? | **Decided 2026-11-23: on this PC with `dagster dev`, which stays on 24/7** (I talked to my teacher). No Azure, Docker or Postgres in Stage 2 (decided 2026-11-26). |
 | 2 | Where does the Dagster code live? | Inside the package (`src/steam_data_platform/orchestration/`) or in the top-level `orchestration/` folder |
 | 3 | Do we want a "freshness" check that warns when the newest run is more than 2 hours old? | Later, as a dbt source freshness check. Not part of the bare minimum. |

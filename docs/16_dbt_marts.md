@@ -321,7 +321,7 @@ Or the whole project: `uv run --env-file ../.env dbt build`.
 
 **A mart is a table, not a view.** It is a copy taken when `dbt build` runs. After each ingestion the dashboard still shows the old numbers until I run `dbt build` again. The staging and intermediate layers are views, so they are always fresh.
 
-For now I run `dbt build` by hand after an ingestion run. Dagster does it later, and the cloud (maybe Azure) after that. **Limit for the thesis:** the dashboard is only as new as the last `dbt build`.
+For now I run `dbt build` by hand after an ingestion run. Dagster does it in Stage 2 ([doc 17](17_dagster_plan.md)). The dashboard then ends up inside Snowflake. **Limit for the thesis:** the dashboard is only as new as the last `dbt build`.
 
 ## 10. Decisions
 
@@ -332,7 +332,7 @@ For now I run `dbt build` by hand after an ingestion run. Dagster does it later,
 | The language flag blanks both change columns | Doc 13 says so. It also blanks the player change on 2026-11-02, where the flag does not matter for players. I followed the doc. It can be relaxed later. |
 | `not_null` only where NULL would be a bug | See section 4. |
 | `coming_soon` and `is_free` get `not_null` | 0 NULL in 1,053 rows, and a NULL would break the splits. |
-| I run `dbt build` by hand for now | Local development. Dagster and the cloud come later. |
+| I run `dbt build` by hand for now | Local development. Dagster does it in Stage 2 ([doc 17](17_dagster_plan.md)). |
 | The model name is `mart_game_detail` and the YAML is `_marts__models.yml` | Same naming as `_int_steam__models.yml` |
 | `mart_portfolio_overview` stacks five copies of the games and groups them once | One `group by` does all the work. Each game is in one group of each type. |
 | Price bands: Under 10, 10 to 19.99, 20 to 39.99, 40 and above | Regular price, fixed edges, at least 11 games per band. 59.99 (2 games) is merged into `40 and above`. |
